@@ -5,6 +5,8 @@ const helmet = require('helmet');
 const compression = require('compression');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+const swaggerUi = require('swagger-ui-express');
+const swaggerSpec = require('./swagger');
 require('dotenv').config();
 
 // Import routes
@@ -46,6 +48,21 @@ app.use(morgan('combined'));
 
 // Static files for uploads
 app.use('/uploads', express.static('uploads'));
+
+// Swagger API Documentation
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'Inventory Management API Documentation',
+  swaggerOptions: {
+    persistAuthorization: true,
+  }
+}));
+
+// API JSON endpoint for swagger spec
+app.get('/api-docs.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
+});
 
 // Routes
 app.use('/api/products', productRoutes);

@@ -1,0 +1,1037 @@
+{
+	"info": {
+		"_postman_id": "inventory-management-api",
+		"name": "Inventory Management System API",
+		"description": "Complete API collection for Off-License Shop Inventory Management System with barcode scanning, stock tracking, and analytics",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "inventory-api"
+	},
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    pm.environment.set('token', response.token);",
+									"    pm.environment.set('userId', response.user.id);",
+									"    pm.environment.set('userRole', response.user.role);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/users/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"users",
+								"login"
+							]
+						},
+						"description": "Login with username/email and password. Returns JWT token for authentication."
+					},
+					"response": [
+						{
+							"name": "Successful Login",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\"\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								},
+								"url": {
+									"raw": "{{baseUrl}}/users/login",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"users",
+										"login"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": "{\n  \"message\": \"Login successful\",\n  \"token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"user\": {\n    \"id\": \"60d5ecb54b24a0c8e8f5d123\",\n    \"username\": \"admin\",\n    \"email\": \"admin@example.com\",\n    \"fullName\": \"Admin User\",\n    \"role\": \"admin\",\n    \"lastLogin\": \"2024-01-15T10:30:00.000Z\"\n  }\n}"
+						}
+					]
+				},
+				{
+					"name": "Register User (Admin Only)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"newuser\",\n  \"email\": \"newuser@example.com\",\n  \"password\": \"password123\",\n  \"firstName\": \"New\",\n  \"lastName\": \"User\",\n  \"role\": \"staff\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/users/register",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"users",
+								"register"
+							]
+						},
+						"description": "Create a new user account (Admin only)"
+					}
+				},
+				{
+					"name": "Get User Profile",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/users/profile",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"users",
+								"profile"
+							]
+						},
+						"description": "Get current authenticated user's profile"
+					}
+				},
+				{
+					"name": "Logout",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/users/logout",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"users",
+								"logout"
+							]
+						},
+						"description": "Logout current user"
+					}
+				}
+			],
+			"description": "User authentication and management endpoints"
+		},
+		{
+			"name": "Products",
+			"item": [
+				{
+					"name": "Get All Products",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/products?page=1&limit=20&category=Beverages&search=cola&lowStock=false",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"products"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1",
+									"description": "Page number for pagination"
+								},
+								{
+									"key": "limit",
+									"value": "20",
+									"description": "Number of items per page"
+								},
+								{
+									"key": "category",
+									"value": "Beverages",
+									"description": "Filter by category"
+								},
+								{
+									"key": "search",
+									"value": "cola",
+									"description": "Search in name and barcode"
+								},
+								{
+									"key": "lowStock",
+									"value": "false",
+									"description": "Filter low stock items"
+								}
+							]
+						},
+						"description": "Get all products with filtering, pagination, and search"
+					}
+				},
+				{
+					"name": "Get Product by ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/products/{{productId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"products",
+								"{{productId}}"
+							]
+						},
+						"description": "Get a specific product by ID"
+					}
+				},
+				{
+					"name": "Get Product by Barcode",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/products/barcode/ABC-abc-1234",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"products",
+								"barcode",
+								"ABC-abc-1234"
+							]
+						},
+						"description": "Get product by barcode/QR code - Essential for mobile scanning"
+					}
+				},
+				{
+					"name": "Create Product",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "name",
+									"value": "Coca Cola 500ml",
+									"type": "text"
+								},
+								{
+									"key": "price",
+									"value": "2.50",
+									"type": "text"
+								},
+								{
+									"key": "category",
+									"value": "Beverages",
+									"type": "text"
+								},
+								{
+									"key": "description",
+									"value": "Refreshing cola drink in 500ml bottle",
+									"type": "text"
+								},
+								{
+									"key": "expirationDate",
+									"value": "2024-12-31T23:59:59.000Z",
+									"type": "text"
+								},
+								{
+									"key": "quantity",
+									"value": "25",
+									"type": "text"
+								},
+								{
+									"key": "qrCode",
+									"value": "ABC-abc-1234",
+									"type": "text"
+								},
+								{
+									"key": "lowStockThreshold",
+									"value": "5",
+									"type": "text"
+								},
+								{
+									"key": "image",
+									"type": "file",
+									"description": "Product image file"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/products",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"products"
+							]
+						},
+						"description": "Create a new product with optional image upload"
+					}
+				},
+				{
+					"name": "Update Product",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "name",
+									"value": "Coca Cola 500ml - Updated",
+									"type": "text"
+								},
+								{
+									"key": "price",
+									"value": "2.75",
+									"type": "text"
+								},
+								{
+									"key": "quantity",
+									"value": "30",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/products/{{productId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"products",
+								"{{productId}}"
+							]
+						},
+						"description": "Update an existing product"
+					}
+				},
+				{
+					"name": "Update Product Quantity",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"quantityChange\": -1\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/products/{{productId}}/quantity",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"products",
+								"{{productId}}",
+								"quantity"
+							]
+						},
+						"description": "Update product quantity (positive to add, negative to subtract) - Essential for mobile stock operations"
+					}
+				},
+				{
+					"name": "Delete Product",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/products/{{productId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"products",
+								"{{productId}}"
+							]
+						},
+						"description": "Delete a product (Admin only)"
+					}
+				}
+			],
+			"description": "Product management endpoints for inventory operations"
+		},
+		{
+			"name": "Stock Management",
+			"item": [
+				{
+					"name": "Reduce Stock",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"productId\": \"{{productId}}\",\n  \"quantity\": 2,\n  \"reason\": \"Sale\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/stock/reduce",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"stock",
+								"reduce"
+							]
+						},
+						"description": "Reduce stock quantity - Primary endpoint for mobile sales operations"
+					}
+				},
+				{
+					"name": "Adjust Stock (Admin Only)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"productId\": \"{{productId}}\",\n  \"adjustment\": 10,\n  \"reason\": \"Stock correction\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/stock/adjust",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"stock",
+								"adjust"
+							]
+						},
+						"description": "Adjust stock levels (Admin only) - for corrections and bulk updates"
+					}
+				},
+				{
+					"name": "Get Stock Transactions",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/stock/transactions?page=1&limit=20&productId={{productId}}&startDate=2024-01-01&endDate=2024-12-31",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"stock",
+								"transactions"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								},
+								{
+									"key": "productId",
+									"value": "{{productId}}"
+								},
+								{
+									"key": "startDate",
+									"value": "2024-01-01"
+								},
+								{
+									"key": "endDate",
+									"value": "2024-12-31"
+								}
+							]
+						},
+						"description": "Get stock transaction history with filtering"
+					}
+				},
+				{
+					"name": "Reverse Stock Transaction (Admin Only)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/stock/transactions/{{transactionId}}/reverse",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"stock",
+								"transactions",
+								"{{transactionId}}",
+								"reverse"
+							]
+						},
+						"description": "Reverse a stock transaction (Admin only)"
+					}
+				}
+			],
+			"description": "Stock management and transaction endpoints"
+		},
+		{
+			"name": "Analytics",
+			"item": [
+				{
+					"name": "Get Dashboard Metrics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/analytics/dashboard",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"analytics",
+								"dashboard"
+							]
+						},
+						"description": "Get dashboard KPIs - Total products, low stock, inventory value, today's sales"
+					}
+				},
+				{
+					"name": "Get Sales Analytics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/analytics/sales?period=monthly&startDate=2024-01-01&endDate=2024-12-31&category=Beverages",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"analytics",
+								"sales"
+							],
+							"query": [
+								{
+									"key": "period",
+									"value": "monthly",
+									"description": "daily, weekly, monthly, yearly"
+								},
+								{
+									"key": "startDate",
+									"value": "2024-01-01"
+								},
+								{
+									"key": "endDate",
+									"value": "2024-12-31"
+								},
+								{
+									"key": "category",
+									"value": "Beverages"
+								}
+							]
+						},
+						"description": "Get sales analytics with date ranges and category filtering"
+					}
+				},
+				{
+					"name": "Get Today's Sales",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/analytics/todays-sales",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"analytics",
+								"todays-sales"
+							]
+						},
+						"description": "Get today's sales count - Used for real-time dashboard updates"
+					}
+				}
+			],
+			"description": "Analytics and reporting endpoints for dashboard metrics"
+		},
+		{
+			"name": "Reports",
+			"item": [
+				{
+					"name": "Products Report (CSV)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/reports/products?format=csv&category=Beverages&lowStock=true",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"reports",
+								"products"
+							],
+							"query": [
+								{
+									"key": "format",
+									"value": "csv",
+									"description": "csv or pdf"
+								},
+								{
+									"key": "category",
+									"value": "Beverages"
+								},
+								{
+									"key": "lowStock",
+									"value": "true"
+								}
+							]
+						},
+						"description": "Generate products report in CSV or PDF format"
+					}
+				},
+				{
+					"name": "Sales Report (PDF)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/reports/sales?format=pdf&startDate=2024-01-01&endDate=2024-12-31&category=Beverages",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"reports",
+								"sales"
+							],
+							"query": [
+								{
+									"key": "format",
+									"value": "pdf"
+								},
+								{
+									"key": "startDate",
+									"value": "2024-01-01"
+								},
+								{
+									"key": "endDate",
+									"value": "2024-12-31"
+								},
+								{
+									"key": "category",
+									"value": "Beverages"
+								}
+							]
+						},
+						"description": "Generate sales report with date range filtering"
+					}
+				},
+				{
+					"name": "Expiry Report",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/reports/expiry?format=csv&expired=true&expiringSoon=true",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"reports",
+								"expiry"
+							],
+							"query": [
+								{
+									"key": "format",
+									"value": "csv"
+								},
+								{
+									"key": "expired",
+									"value": "true"
+								},
+								{
+									"key": "expiringSoon",
+									"value": "true"
+								}
+							]
+						},
+						"description": "Generate expiry report for expired and expiring products"
+					}
+				},
+				{
+					"name": "Stock Valuation Report",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/reports/valuation?format=pdf&category=Beverages",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"reports",
+								"valuation"
+							],
+							"query": [
+								{
+									"key": "format",
+									"value": "pdf"
+								},
+								{
+									"key": "category",
+									"value": "Beverages"
+								}
+							]
+						},
+						"description": "Generate stock valuation report by category"
+					}
+				}
+			],
+			"description": "Report generation endpoints with CSV/PDF export capabilities"
+		},
+		{
+			"name": "Alerts",
+			"item": [
+				{
+					"name": "Get All Alerts",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/alerts?type=low_stock&category=Beverages&limit=50",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"alerts"
+							],
+							"query": [
+								{
+									"key": "type",
+									"value": "low_stock",
+									"description": "low_stock, expired, expiring_soon"
+								},
+								{
+									"key": "category",
+									"value": "Beverages"
+								},
+								{
+									"key": "limit",
+									"value": "50"
+								}
+							]
+						},
+						"description": "Get system alerts for low stock, expiring, and expired products"
+					}
+				}
+			],
+			"description": "Alert and notification endpoints"
+		},
+		{
+			"name": "User Management (Admin)",
+			"item": [
+				{
+					"name": "Get All Users",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/users?page=1&limit=20&role=staff&search=john&isActive=true",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"users"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								},
+								{
+									"key": "role",
+									"value": "staff",
+									"description": "admin or staff"
+								},
+								{
+									"key": "search",
+									"value": "john"
+								},
+								{
+									"key": "isActive",
+									"value": "true"
+								}
+							]
+						},
+						"description": "Get all users with filtering (Admin only)"
+					}
+				},
+				{
+					"name": "Toggle User Status",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/users/{{userId}}/toggle-status",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"users",
+								"{{userId}}",
+								"toggle-status"
+							]
+						},
+						"description": "Activate/deactivate user account (Admin only)"
+					}
+				}
+			],
+			"description": "User management endpoints for admin operations"
+		},
+		{
+			"name": "Health Check",
+			"item": [
+				{
+					"name": "API Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/health",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"health"
+							]
+						},
+						"description": "Check if API is running and accessible"
+					}
+				}
+			],
+			"description": "System health check endpoint"
+		}
+	],
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{token}}",
+				"type": "string"
+			}
+		]
+	},
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Auto-set content type for JSON requests",
+					"if (pm.request.body && pm.request.body.mode === 'raw') {",
+					"    pm.request.headers.add({key: 'Content-Type', value: 'application/json'});",
+					"}"
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Global test to check response time",
+					"pm.test('Response time is less than 3000ms', function () {",
+					"    pm.expect(pm.response.responseTime).to.be.below(3000);",
+					"});",
+					"",
+					"// Log response for debugging",
+					"console.log('Response:', pm.response.json());"
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:5001/api",
+			"type": "string"
+		},
+		{
+			"key": "token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "productId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "userId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "transactionId",
+			"value": "",
+			"type": "string"
+		}
+	]
+}

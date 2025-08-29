@@ -22,9 +22,9 @@ const userSchema = new mongoose.Schema({
     minlength: 6
   },
   role: {
-    type: String,
-    enum: ['admin', 'staff'],
-    default: 'staff'
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Role',
+    required: true
   },
   firstName: {
     type: String,
@@ -35,6 +35,26 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true,
     trim: true
+  },
+  shop: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Shop'
+  },
+  permissions: [{
+    type: String
+  }],
+  isEmailVerified: {
+    type: Boolean,
+    default: false
+  },
+  emailVerificationToken: {
+    type: String
+  },
+  passwordResetToken: {
+    type: String
+  },
+  passwordResetExpires: {
+    type: Date
   },
   isActive: {
     type: Boolean,

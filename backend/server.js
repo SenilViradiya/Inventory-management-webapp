@@ -16,6 +16,19 @@ const userRoutes = require('./routes/users');
 const analyticsRoutes = require('./routes/analytics');
 const reportRoutes = require('./routes/reports');
 const alertRoutes = require('./routes/alerts');
+const roleRoutes = require('./routes/roles');
+const subscriptionRoutes = require('./routes/subscriptions');
+const categoryRoutes = require('./routes/categories');
+const orderRoutes = require('./routes/orders');
+const supplierRoutes = require('./routes/suppliers');
+const purchaseOrderRoutes = require('./routes/purchase-orders');
+const inquiryRoutes = require('./routes/inquiries');
+const superadminRoutes = require('./routes/superadmin');
+const enhancedAlertRoutes = require('./routes/enhanced-alerts');
+const simpleUserRoutes = require('./routes/simple-users');
+const simpleProductRoutes = require('./routes/simple-products');
+const simpleAlertRoutes = require('./routes/simple-alerts');
+const simpleAnalyticsRoutes = require('./routes/simple-analytics');
 
 const app = express();
 
@@ -71,6 +84,19 @@ app.use('/api/users', userRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/alerts', alertRoutes);
+app.use('/api/roles', roleRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/categories', categoryRoutes);
+app.use('/api/orders', orderRoutes);
+app.use('/api/suppliers', supplierRoutes);
+app.use('/api/purchase-orders', purchaseOrderRoutes);
+app.use('/api/inquiries', inquiryRoutes);
+app.use('/api/superadmin', superadminRoutes);
+app.use('/api/enhanced-alerts', enhancedAlertRoutes);
+app.use('/api/simple-users', simpleUserRoutes);
+app.use('/api/simple-products', simpleProductRoutes);
+app.use('/api/simple-alerts', simpleAlertRoutes);
+app.use('/api/simple-analytics', simpleAnalyticsRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

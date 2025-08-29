@@ -36,11 +36,12 @@ const upload = multer({
 const productValidation = [
   body('name').trim().notEmpty().withMessage('Product name is required'),
   body('price').isFloat({ min: 0 }).withMessage('Price must be a positive number'),
-  body('category').trim().notEmpty().withMessage('Category is required'),
+  body('category').optional().isMongoId().withMessage('Valid category ID required'),
   body('expirationDate').isISO8601().withMessage('Valid expiration date is required'),
   body('quantity').isInt({ min: 0 }).withMessage('Quantity must be a non-negative integer'),
   body('qrCode').trim().notEmpty().withMessage('QR code is required'),
-  body('lowStockThreshold').optional().isInt({ min: 0 }).withMessage('Low stock threshold must be non-negative')
+  body('lowStockThreshold').optional().isInt({ min: 0 }).withMessage('Low stock threshold must be non-negative'),
+  body('shopId').isMongoId().withMessage('Valid shop ID is required')
 ];
 
 // GET /api/products - Get all products with filtering and pagination

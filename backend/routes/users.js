@@ -79,7 +79,135 @@ router.post('/signup', [
   }
 });
 
-// POST /api/users/register - Register new user (Admin only)
+// POST /api/users - Create a new user (requires authentication and admin/superadmin role)
+router.post('/', authenticateToken, (req, res, next) => {
+  // Allow admin or superadmin roles
+  if (!req.user || !req.user.role || (req.user.role.name !== 'admin' && req.user.role.name !== 'superadmin')) {
+    return res.status(403).json({ 
+      message: 'Access denied. Admin or SuperAdmin role required.',
+      userRole: req.user?.role?.name || 'no role',
+      requiredRole: ['admin', 'superadmin']
+    });
+  }
+  next();
+}, [
+  body('username').trim().isLength({ min: 3, max: 30 }).withMessage('Username must be 3-30 characters'),
+  body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
+  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  body('firstName').trim().notEmpty().withMessage('First name is required'),
+  body('lastName').trim().notEmpty().withMessage('Last name is required'),
+  body('role').optional().isIn(['admin', 'staff', 'superadmin', 'developer', 'tester', 'marketer', 'designer', 'manager']).withMessage('Invalid role'),
+  body('organization').optional().isMongoId().withMessage('Invalid organization ID'),
+  body('organizationRole').optional().trim(),
+  body('phone').optional().trim(),
+  body('department').optional().trim(),
+  body('jobTitle').optional().trim(),
+  body('dateOfJoining').optional().isISO8601().withMessage('Invalid date format'),
+  body('isActive').optional().isBoolean().withMessage('isActive must be a boolean')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const {
+      username,
+      email,
+      password,
+      firstName,
+      lastName,
+      role = 'staff',
+      organization,
+      organizationRole,
+      phone,
+      department,
+      jobTitle,
+      dateOfJoining,
+      emergencyContact,
+      isActive = true
+    } = req.body;
+
+    // Check if user already exists
+    const existingUser = await User.findOne({
+      $or: [{ email }, { username }]
+    });
+
+    if (existingUser) {
+      return res.status(400).json({
+        message: 'User already exists with this email or username'
+      });
+    }
+
+    // Find the role document
+    const Role = require('../models/Role');
+    const roleDoc = await Role.findOne({ name: role });
+    if (!roleDoc) {
+      return res.status(400).json({
+        message: `Role '${role}' not found. Available roles: superadmin, admin, staff`
+      });
+    }
+
+    // Hash password
+    const saltRounds = 12;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    // Prepare user data
+    const userData = {
+      username,
+      email,
+      password: hashedPassword,
+      firstName,
+      lastName,
+      role: roleDoc._id,
+      organization,
+      phone,
+      department,
+      jobTitle,
+      dateOfJoining,
+      emergencyContact,
+      isActive
+    };
+
+    // Only set organizationRole if it's provided and valid
+    if (organizationRole && organizationRole.trim() !== '') {
+      userData.organizationRole = organizationRole;
+    }
+
+    // Create user
+    const user = new User(userData);
+
+    await user.save();
+
+    // Log the activity (commented out for now - CREATE_USER not in ActivityLog enum)
+    // await ActivityLog.create({
+    //   userId: req.user.id,
+    //   action: 'CREATE_USER',
+    //   details: `Created user: ${username} (${email})`,
+    //   ipAddress: req.ip,
+    //   userAgent: req.get('User-Agent')
+    // });
+
+    res.status(201).json({
+      message: 'User created successfully',
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+        organization: user.organization,
+        isActive: user.isActive
+      }
+    });
+  } catch (error) {
+    console.error('Error creating user:', error);
+    res.status(500).json({ message: 'Error creating user', error: error.message });
+  }
+});
+
+// POST /api/users/register - Admin user registration
 router.post('/register', authenticateToken, requireRole('admin'), [
   body('username').trim().isLength({ min: 3, max: 30 }).withMessage('Username must be 3-30 characters'),
   body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
@@ -152,7 +280,7 @@ router.post('/login', [
     const { email, password } = req.body;
 
     // Find user
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email }).populate('role');
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
@@ -177,7 +305,7 @@ router.post('/login', [
       { 
         id: user._id,
         email: user.email,
-        role: user.role
+        role: user.role?.name || user.role
       },
       process.env.JWT_SECRET || 'fallback_secret',
       { expiresIn: process.env.JWT_EXPIRES_IN || '8h' }
@@ -199,8 +327,8 @@ router.post('/login', [
         id: user._id,
         username: user.username,
         email: user.email,
-        fullName: user.fullName,
-        role: user.role,
+        fullName: `${user.firstName} ${user.lastName}`,
+        role: user.role?.name || user.role,
         lastLogin: user.lastLogin
       }
     });
@@ -397,6 +525,62 @@ router.put('/:id/toggle-status', authenticateToken, requireRole('admin'), async 
     });
   } catch (error) {
     res.status(500).json({ message: 'Error updating user status', error: error.message });
+  }
+});
+
+// POST /api/users/:id/extend-trial - Extend user trial period (Developer only)
+router.post('/:id/extend-trial', authenticateToken, requireRole('superadmin'), [
+  body('days').isInt({ min: 1, max: 365 }).withMessage('Days must be between 1 and 365')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { id } = req.params;
+    const { days } = req.body;
+
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Calculate new trial end date
+    const currentDate = new Date();
+    const currentTrialEnd = user.trialEndDate || currentDate;
+    const newTrialEnd = new Date(Math.max(currentTrialEnd.getTime(), currentDate.getTime()) + (days * 24 * 60 * 60 * 1000));
+
+    // Update user trial
+    user.trialEndDate = newTrialEnd;
+    user.isTrialActive = true;
+    await user.save();
+
+    // Log the activity
+    await ActivityLog.create({
+      userId: req.user.id,
+      action: 'extend_trial',
+      details: {
+        targetUserId: id,
+        targetUserEmail: user.email,
+        daysExtended: days,
+        newTrialEndDate: newTrialEnd
+      },
+      timestamp: new Date()
+    });
+
+    res.json({
+      message: `Trial extended by ${days} days successfully`,
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        trialEndDate: user.trialEndDate,
+        isTrialActive: user.isTrialActive
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error extending trial', error: error.message });
   }
 });
 

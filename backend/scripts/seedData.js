@@ -4,6 +4,7 @@ require('dotenv').config();
 
 const User = require('../models/User');
 const Product = require('../models/Product');
+const Role = require('../models/Role');
 
 const sampleUsers = [
   {
@@ -253,15 +254,45 @@ const seedDatabase = async () => {
     // Clear existing data
     await User.deleteMany({});
     await Product.deleteMany({});
+    await Role.deleteMany({});
     console.log('Cleared existing data');
+
+    // Create roles
+    const roles = [];
+    const roleDefinitions = [
+      {
+        name: 'admin',
+        permissions: ['view_inventory', 'edit_inventory', 'delete_inventory', 'view_reports', 'generate_reports', 'manage_staff', 'view_analytics', 'manage_orders', 'manage_suppliers', 'manage_categories'],
+        description: 'Administrator with full access to inventory management'
+      },
+      {
+        name: 'staff',
+        permissions: ['view_inventory', 'edit_inventory', 'view_reports', 'view_analytics'],
+        description: 'Staff member with limited access'
+      }
+    ];
+
+    for (const roleData of roleDefinitions) {
+      const role = new Role(roleData);
+      await role.save();
+      roles.push(role);
+      console.log(`Created role: ${roleData.name}`);
+    }
 
     // Create users
     const users = [];
     for (const userData of sampleUsers) {
       const hashedPassword = await bcrypt.hash(userData.password, 12);
+      const role = roles.find(r => r.name === userData.role);
+      if (!role) {
+        console.error(`Role ${userData.role} not found for user ${userData.username}`);
+        continue;
+      }
+      
       const user = new User({
         ...userData,
-        password: hashedPassword
+        password: hashedPassword,
+        role: role._id
       });
       await user.save();
       users.push(user);
@@ -269,7 +300,7 @@ const seedDatabase = async () => {
     }
 
     // Create products (assign to admin user as creator)
-    const adminUser = users.find(user => user.role === 'admin');
+    const adminUser = users.find(user => user.role.toString() === roles.find(r => r.name === 'admin')._id.toString());
     
     for (const productData of sampleProducts) {
       const product = new Product({

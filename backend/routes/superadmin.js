@@ -3,6 +3,7 @@ const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
 const Shop = require('../models/Shop');
+const Role = require('../models/Role');
 const { Subscription, SubscriptionPlan } = require('../models/Subscription');
 const Inquiry = require('../models/Inquiry');
 const Order = require('../models/Order');
@@ -120,6 +121,130 @@ router.get('/dashboard', authenticateToken, requireRole('superadmin'), async (re
 
   } catch (error) {
     res.status(500).json({ message: 'Error fetching dashboard data', error: error.message });
+  }
+});
+
+// GET /api/superadmin/system-stats - System statistics
+router.get('/system-stats', authenticateToken, requireRole('superadmin'), async (req, res) => {
+  try {
+    const totalUsers = await User.countDocuments({ isActive: true });
+    const totalShops = await Shop.countDocuments({ isActive: true });
+    const totalProducts = await User.aggregate([
+      { $match: { isActive: true } },
+      { $lookup: { from: 'products', localField: '_id', foreignField: 'createdBy', as: 'products' } },
+      { $group: { _id: null, total: { $sum: { $size: '$products' } } } }
+    ]);
+    
+    const totalRevenue = await Subscription.aggregate([
+      { $match: { status: 'active' } },
+      { $group: { _id: null, total: { $sum: '$payment.amount' } } }
+    ]);
+    
+    const activeSubscriptions = await Subscription.countDocuments({ status: 'active' });
+    const systemAlerts = await ActivityLog.countDocuments({ 
+      type: 'system_alert', 
+      createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } 
+    });
+    
+    // Monthly growth
+    const lastMonth = new Date();
+    lastMonth.setMonth(lastMonth.getMonth() - 1);
+    
+    const usersGrowth = await User.countDocuments({ 
+      createdAt: { $gte: lastMonth }, 
+      isActive: true 
+    });
+    const shopsGrowth = await Shop.countDocuments({ 
+      createdAt: { $gte: lastMonth }, 
+      isActive: true 
+    });
+    const revenueGrowth = await Subscription.aggregate([
+      { 
+        $match: { 
+          status: 'active',
+          currentPeriodStart: { $gte: lastMonth }
+        } 
+      },
+      { $group: { _id: null, total: { $sum: '$payment.amount' } } }
+    ]);
+
+    res.json({
+      totalUsers,
+      totalShops,
+      totalProducts: totalProducts[0]?.total || 0,
+      totalRevenue: totalRevenue[0]?.total || 0,
+      activeSubscriptions,
+      systemAlerts,
+      monthlyGrowth: {
+        users: usersGrowth,
+        shops: shopsGrowth,
+        revenue: revenueGrowth[0]?.total || 0
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching system stats', error: error.message });
+  }
+});
+
+// GET /api/superadmin/subscription-stats - Subscription statistics
+router.get('/subscription-stats', authenticateToken, requireRole('superadmin'), async (req, res) => {
+  try {
+    const subscriptionStats = await Subscription.aggregate([
+      {
+        $lookup: {
+          from: 'subscriptionplans',
+          localField: 'plan',
+          foreignField: '_id',
+          as: 'planInfo'
+        }
+      },
+      {
+        $group: {
+          _id: '$planInfo.name',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const stats = {
+      free: 0,
+      basic: 0,
+      premium: 0
+    };
+
+    subscriptionStats.forEach(stat => {
+      const planName = stat._id?.[0]?.toLowerCase() || 'free';
+      if (stats.hasOwnProperty(planName)) {
+        stats[planName] = stat.count;
+      }
+    });
+
+    res.json(stats);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching subscription stats', error: error.message });
+  }
+});
+
+// GET /api/superadmin/recent-activity - Recent system activity
+router.get('/recent-activity', authenticateToken, requireRole('superadmin'), async (req, res) => {
+  try {
+    const recentActivity = await ActivityLog.find()
+      .sort({ timestamp: -1 })
+      .limit(20)
+      .populate('userId', 'username fullName email')
+      .lean();
+
+    const formattedActivity = recentActivity.map(activity => ({
+      id: activity._id,
+      type: activity.action || 'system_event',
+      description: activity.description || `${activity.action} performed by ${activity.userId?.fullName || 'System'}`,
+      timestamp: activity.timestamp || activity.createdAt,
+      severity: activity.level || 'info'
+    }));
+
+    res.json(formattedActivity);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching recent activity', error: error.message });
   }
 });
 
@@ -482,6 +607,181 @@ router.put('/user/:id/status', authenticateToken, requireRole('superadmin'), [
 
   } catch (error) {
     res.status(500).json({ message: 'Error updating user status', error: error.message });
+  }
+});
+
+// POST /api/superadmin/businesses - Create new business/shop
+router.post('/businesses', authenticateToken, requireRole('superadmin'), [
+  body('name').notEmpty().withMessage('Business name is required'),
+  body('email').isEmail().withMessage('Valid email is required'),
+  body('planType').isIn(['free', 'basic', 'premium']).withMessage('Valid plan type required'),
+  body('adminUser.username').notEmpty().withMessage('Admin username is required'),
+  body('adminUser.email').isEmail().withMessage('Valid admin email is required'),
+  body('adminUser.password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  body('adminUser.fullName').notEmpty().withMessage('Admin full name is required')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { name, email, planType, adminUser } = req.body;
+
+    // Check if business email already exists
+    const existingShop = await Shop.findOne({ email });
+    if (existingShop) {
+      return res.status(400).json({ message: 'Business with this email already exists' });
+    }
+
+    // Check if admin user already exists
+    const existingUser = await User.findOne({ 
+      $or: [{ email: adminUser.email }, { username: adminUser.username }] 
+    });
+    if (existingUser) {
+      return res.status(400).json({ message: 'Admin user already exists' });
+    }
+
+    // Create admin user
+    const adminRole = await Role.findOne({ name: 'admin' });
+    const newAdmin = new User({
+      username: adminUser.username,
+      email: adminUser.email,
+      password: adminUser.password, // Will be hashed by User model
+      fullName: adminUser.fullName,
+      role: adminRole._id,
+      isActive: true
+    });
+    await newAdmin.save();
+
+    // Create shop
+    const newShop = new Shop({
+      name,
+      email,
+      owner: newAdmin._id,
+      subscription: {
+        plan: planType,
+        status: 'active',
+        currentPeriodStart: new Date(),
+        currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+      },
+      isActive: true,
+      settings: {
+        currency: 'USD',
+        timezone: 'UTC',
+        lowStockThreshold: 10
+      }
+    });
+    await newShop.save();
+
+    // Update admin user with shop reference
+    newAdmin.shop = {
+      id: newShop._id,
+      name: newShop.name
+    };
+    await newAdmin.save();
+
+    // Log activity
+    await new ActivityLog({
+      userId: req.user.id,
+      action: 'business_created',
+      description: `New business "${name}" created with admin user "${adminUser.username}"`,
+      metadata: { businessId: newShop._id, adminUserId: newAdmin._id }
+    }).save();
+
+    res.status(201).json({
+      message: 'Business created successfully',
+      business: newShop,
+      adminUser: {
+        id: newAdmin._id,
+        username: newAdmin.username,
+        email: newAdmin.email,
+        fullName: newAdmin.fullName
+      }
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: 'Error creating business', error: error.message });
+  }
+});
+
+// GET /api/superadmin/businesses - Get all businesses
+router.get('/businesses', authenticateToken, requireRole('superadmin'), async (req, res) => {
+  try {
+    const { page = 1, limit = 20, search } = req.query;
+    
+    const filter = {};
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const businesses = await Shop.find(filter)
+      .populate('owner', 'username fullName email')
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .lean();
+
+    const total = await Shop.countDocuments(filter);
+
+    res.json({
+      businesses,
+      pagination: {
+        current: parseInt(page),
+        pages: Math.ceil(total / limit),
+        total
+      }
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching businesses', error: error.message });
+  }
+});
+
+// PUT /api/superadmin/businesses/:id/subscription - Update business subscription
+router.put('/businesses/:id/subscription', authenticateToken, requireRole('superadmin'), [
+  body('planType').isIn(['free', 'basic', 'premium']).withMessage('Valid plan type required')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { id } = req.params;
+    const { planType, features } = req.body;
+
+    const business = await Shop.findById(id);
+    if (!business) {
+      return res.status(404).json({ message: 'Business not found' });
+    }
+
+    // Update subscription
+    business.subscription.plan = planType;
+    business.subscription.features = features || [];
+    business.subscription.currentPeriodStart = new Date();
+    business.subscription.currentPeriodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    
+    await business.save();
+
+    // Log activity
+    await new ActivityLog({
+      userId: req.user.id,
+      action: 'subscription_updated',
+      description: `Business "${business.name}" subscription updated to ${planType}`,
+      metadata: { businessId: business._id, newPlan: planType }
+    }).save();
+
+    res.json({
+      message: 'Subscription updated successfully',
+      business
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating subscription', error: error.message });
   }
 });
 

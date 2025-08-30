@@ -218,11 +218,33 @@ const checkSubscriptionLimits = (feature) => {
   };
 };
 
+// Middleware to require developer access (superadmin role)
+const requireDeveloper = async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    // Check if user has superadmin role
+    const roleName = req.user.role?.name || req.user.role;
+    if (roleName !== 'superadmin') {
+      return res.status(403).json({ 
+        message: 'Developer access required. This endpoint is only accessible by system developers.' 
+      });
+    }
+
+    next();
+  } catch (error) {
+    res.status(500).json({ message: 'Error checking developer access', error: error.message });
+  }
+};
+
 module.exports = {
   authenticateToken,
   requireRole,
   requirePermission,
   requireStaffOrAdmin,
   requireShopAccess,
-  checkSubscriptionLimits
+  checkSubscriptionLimits,
+  requireDeveloper
 };

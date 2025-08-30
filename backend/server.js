@@ -28,7 +28,9 @@ const enhancedAlertRoutes = require('./routes/enhanced-alerts');
 const simpleUserRoutes = require('./routes/simple-users');
 const simpleProductRoutes = require('./routes/simple-products');
 const simpleAlertRoutes = require('./routes/simple-alerts');
+const businessRoutes = require('./routes/businesses');
 const simpleAnalyticsRoutes = require('./routes/simple-analytics');
+const inventoryRoutes = require('./routes/inventory');
 
 const app = express();
 
@@ -97,6 +99,8 @@ app.use('/api/simple-users', simpleUserRoutes);
 app.use('/api/simple-products', simpleProductRoutes);
 app.use('/api/simple-alerts', simpleAlertRoutes);
 app.use('/api/simple-analytics', simpleAnalyticsRoutes);
+app.use('/api/businesses', businessRoutes);
+app.use('/api/inventory', inventoryRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

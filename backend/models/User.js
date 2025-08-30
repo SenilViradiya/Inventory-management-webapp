@@ -40,6 +40,17 @@ const userSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Shop'
   },
+  // Organization/Business reference
+  organization: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Business'
+  },
+  // User role within their organization
+  organizationRole: {
+    type: String,
+    enum: ['staff', 'admin', 'developer', 'tester', 'marketer', 'designer', 'manager', 'superadmin'],
+    default: 'staff'
+  },
   permissions: [{
     type: String
   }],
@@ -62,6 +73,19 @@ const userSchema = new mongoose.Schema({
   },
   lastLogin: {
     type: Date
+  },
+  // Trial management fields
+  trialEndDate: {
+    type: Date,
+    default: () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days from now
+  },
+  isTrialActive: {
+    type: Boolean,
+    default: true
+  },
+  trialExtensions: {
+    type: Number,
+    default: 0
   }
 }, {
   timestamps: true

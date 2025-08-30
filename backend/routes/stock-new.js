@@ -5,14 +5,14 @@ const Product = require('../models/Product');
 const ActivityLog = require('../models/ActivityLog');
 const StockMovement = require('../models/StockMovement');
 const StockService = require('../services/stockService');
-const { authenticateToken, requireRole } = require('../middleware/auth');
+const { authenticateToken, requireRole, protect } = require('../middleware/auth');
 
 // NEW STOCK MANAGEMENT ROUTES
 
 // @desc    Move stock from godown to store
 // @route   POST /api/stock/move-to-store
 // @access  Private
-router.post('/move-to-store', authenticateToken, async (req, res) => {
+router.post('/move-to-store', protect, async (req, res) => {
   try {
     const { productId, quantity, reason, notes } = req.body;
 
@@ -49,7 +49,7 @@ router.post('/move-to-store', authenticateToken, async (req, res) => {
 // @desc    Move stock from store to godown
 // @route   POST /api/stock/move-to-godown
 // @access  Private
-router.post('/move-to-godown', authenticateToken, async (req, res) => {
+router.post('/move-to-godown', protect, async (req, res) => {
   try {
     const { productId, quantity, reason, notes } = req.body;
 
@@ -86,7 +86,7 @@ router.post('/move-to-godown', authenticateToken, async (req, res) => {
 // @desc    Add stock to godown (new delivery)
 // @route   POST /api/stock/add-godown
 // @access  Private
-router.post('/add-godown', authenticateToken, async (req, res) => {
+router.post('/add-godown', protect, async (req, res) => {
   try {
     const { productId, quantity, reason, batchNumber, referenceNumber } = req.body;
 
@@ -124,7 +124,7 @@ router.post('/add-godown', authenticateToken, async (req, res) => {
 // @desc    Process sale from store
 // @route   POST /api/stock/process-sale
 // @access  Private
-router.post('/process-sale', authenticateToken, async (req, res) => {
+router.post('/process-sale', protect, async (req, res) => {
   try {
     const { productId, quantity, orderNumber } = req.body;
 
@@ -160,7 +160,7 @@ router.post('/process-sale', authenticateToken, async (req, res) => {
 // @desc    Get stock movement history for a product
 // @route   GET /api/stock/movement-history/:productId
 // @access  Private
-router.get('/movement-history/:productId', authenticateToken, async (req, res) => {
+router.get('/movement-history/:productId', protect, async (req, res) => {
   try {
     const { productId } = req.params;
     const { limit } = req.query;
@@ -187,7 +187,7 @@ router.get('/movement-history/:productId', authenticateToken, async (req, res) =
 // @desc    Get stock summary
 // @route   GET /api/stock/summary
 // @access  Private
-router.get('/summary', authenticateToken, async (req, res) => {
+router.get('/summary', protect, async (req, res) => {
   try {
     const summary = await StockService.getStockSummary();
 
@@ -208,7 +208,7 @@ router.get('/summary', authenticateToken, async (req, res) => {
 // @desc    Get products with low stock
 // @route   GET /api/stock/low-stock
 // @access  Private
-router.get('/low-stock', authenticateToken, async (req, res) => {
+router.get('/low-stock', protect, async (req, res) => {
   try {
     const products = await Product.find({
       $expr: {
@@ -233,7 +233,7 @@ router.get('/low-stock', authenticateToken, async (req, res) => {
 // @desc    Get products with zero stock
 // @route   GET /api/stock/out-of-stock
 // @access  Private
-router.get('/out-of-stock', authenticateToken, async (req, res) => {
+router.get('/out-of-stock', protect, async (req, res) => {
   try {
     const products = await Product.find({
       'stock.total': 0

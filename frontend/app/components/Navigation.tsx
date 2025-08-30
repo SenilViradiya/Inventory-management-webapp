@@ -12,7 +12,9 @@ import {
   FileText, 
   Users, 
   LogOut,
-  User
+  User,
+  ArrowRightLeft,
+  Settings
 } from 'lucide-react';
 
 const Navigation = () => {
@@ -28,10 +30,13 @@ const Navigation = () => {
     { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { href: '/scanner', icon: ScanLine, label: 'Scanner' },
     { href: '/products', icon: Package, label: 'Products' },
+    { href: '/stock-management', icon: ArrowRightLeft, label: 'Stock Management' },
     { href: '/alerts', icon: AlertTriangle, label: 'Alerts' },
     { href: '/analytics', icon: BarChart3, label: 'Analytics' },
     { href: '/reports', icon: FileText, label: 'Reports' },
     ...(user?.role === 'admin' ? [{ href: '/users', icon: Users, label: 'Users' }] : []),
+    { href: '/settings', icon: Settings, label: 'Categories' },
+    { href: '/shop-settings', icon: Settings, label: 'Shop Settings' },
   ];
 
   return (

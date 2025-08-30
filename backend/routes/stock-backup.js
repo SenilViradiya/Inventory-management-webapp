@@ -5,14 +5,14 @@ const Product = require('../models/Product');
 const ActivityLog = require('../models/ActivityLog');
 const StockMovement = require('../models/StockMovement');
 const StockService = require('../services/stockService');
-const { authenticateToken, requireRole } = require('../middleware/auth');
+const { authenticateToken, requireRole, protect } = require('../middleware/auth');
 
 // NEW STOCK MANAGEMENT ROUTES
 
 // @desc    Move stock from godown to store
 // @route   POST /api/stock/move-to-store
 // @access  Private
-router.post('/move-to-store', authenticateToken, async (req, res) => {
+router.post('/move-to-store', protect, async (req, res) => {
   try {
     const { productId, quantity, reason, notes } = req.body;
 
@@ -49,7 +49,7 @@ router.post('/move-to-store', authenticateToken, async (req, res) => {
 // @desc    Move stock from store to godown
 // @route   POST /api/stock/move-to-godown
 // @access  Private
-router.post('/move-to-godown', authenticateToken, async (req, res) => {
+router.post('/move-to-godown', protect, async (req, res) => {
   try {
     const { productId, quantity, reason, notes } = req.body;
 
@@ -86,7 +86,7 @@ router.post('/move-to-godown', authenticateToken, async (req, res) => {
 // @desc    Add stock to godown (new delivery)
 // @route   POST /api/stock/add-godown
 // @access  Private
-router.post('/add-godown', authenticateToken, async (req, res) => {
+router.post('/add-godown', protect, async (req, res) => {
   try {
     const { productId, quantity, reason, batchNumber, referenceNumber } = req.body;
 
@@ -124,7 +124,7 @@ router.post('/add-godown', authenticateToken, async (req, res) => {
 // @desc    Process sale from store
 // @route   POST /api/stock/process-sale
 // @access  Private
-router.post('/process-sale', authenticateToken, async (req, res) => {
+router.post('/process-sale', protect, async (req, res) => {
   try {
     const { productId, quantity, orderNumber } = req.body;
 
@@ -160,7 +160,7 @@ router.post('/process-sale', authenticateToken, async (req, res) => {
 // @desc    Get stock movement history for a product
 // @route   GET /api/stock/movement-history/:productId
 // @access  Private
-router.get('/movement-history/:productId', authenticateToken, async (req, res) => {
+router.get('/movement-history/:productId', protect, async (req, res) => {
   try {
     const { productId } = req.params;
     const { limit } = req.query;
@@ -187,7 +187,7 @@ router.get('/movement-history/:productId', authenticateToken, async (req, res) =
 // @desc    Get stock summary
 // @route   GET /api/stock/summary
 // @access  Private
-router.get('/summary', authenticateToken, async (req, res) => {
+router.get('/summary', protect, async (req, res) => {
   try {
     const summary = await StockService.getStockSummary();
 
@@ -208,7 +208,7 @@ router.get('/summary', authenticateToken, async (req, res) => {
 // @desc    Get products with low stock
 // @route   GET /api/stock/low-stock
 // @access  Private
-router.get('/low-stock', authenticateToken, async (req, res) => {
+router.get('/low-stock', protect, async (req, res) => {
   try {
     const products = await Product.find({
       $expr: {
@@ -233,7 +233,7 @@ router.get('/low-stock', authenticateToken, async (req, res) => {
 // @desc    Get products with zero stock
 // @route   GET /api/stock/out-of-stock
 // @access  Private
-router.get('/out-of-stock', authenticateToken, async (req, res) => {
+router.get('/out-of-stock', protect, async (req, res) => {
   try {
     const products = await Product.find({
       'stock.total': 0
@@ -254,7 +254,6 @@ router.get('/out-of-stock', authenticateToken, async (req, res) => {
 });
 
 // LEGACY ROUTES (Updated to work with new stock structure)
-
 // POST /api/stock/reduce - Reduce stock by QR code or manual entry (Legacy - updated)
 router.post('/reduce', authenticateToken, [
   body('qrCode').trim().notEmpty().withMessage('QR code is required'),
@@ -343,12 +342,29 @@ router.post('/reduce', authenticateToken, [
     res.status(500).json({ message: 'Error reducing stock', error: error.message });
   }
 });
+    });
+    await activityLog.save();
 
-// POST /api/stock/increase - Increase stock (Admin and Staff) - Updated for new structure
+    res.json({
+      message: 'Stock reduced successfully',
+      product: {
+        id: product._id,
+        name: product.name,
+        previousQuantity,
+        newQuantity: product.quantity,
+        reduction: quantity
+      },
+      logId: activityLog._id
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error reducing stock', error: error.message });
+  }
+});
+
+// POST /api/stock/increase - Increase stock (Admin and Staff)
 router.post('/increase', authenticateToken, [
   body('productId').isMongoId().withMessage('Valid product ID is required'),
   body('quantity').isInt({ min: 1 }).withMessage('Quantity must be a positive integer'),
-  body('location').isIn(['godown', 'store']).withMessage('Location must be godown or store'),
   body('reason').optional().isString().withMessage('Reason must be a string')
 ], async (req, res) => {
   try {
@@ -357,57 +373,26 @@ router.post('/increase', authenticateToken, [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { productId, quantity, location = 'godown', reason = '' } = req.body;
+    const { productId, quantity, reason = '' } = req.body;
 
     const product = await Product.findById(productId);
     if (!product) {
       return res.status(404).json({ message: 'Product not found' });
     }
 
-    const previousStock = {
-      godown: product.stock.godown,
-      store: product.stock.store,
-      total: product.stock.total
-    };
-
-    // Add to specified location
-    if (location === 'godown') {
-      product.stock.godown += quantity;
-    } else {
-      product.stock.store += quantity;
-    }
-    
-    product.stock.total = product.stock.godown + product.stock.store;
-    product.quantity = product.stock.total; // Update legacy field
+    const previousQuantity = product.quantity;
+    product.quantity += quantity;
     await product.save();
 
-    // Create stock movement record
-    const stockMovement = new StockMovement({
-      productId: product._id,
-      movementType: location === 'godown' ? 'godown_in' : 'store_in',
-      fromLocation: 'supplier',
-      toLocation: location,
-      quantity,
-      previousStock,
-      newStock: {
-        godown: product.stock.godown,
-        store: product.stock.store,
-        total: product.stock.total
-      },
-      reason: reason || `Stock increase to ${location}`,
-      performedBy: req.user.id
-    });
-    await stockMovement.save();
-
-    // Log the activity (legacy support)
+    // Log the activity
     const activityLog = new ActivityLog({
       userId: req.user.id,
       action: 'INCREASE_STOCK',
       productId: product._id,
       change: quantity,
-      previousValue: previousStock.total,
-      newValue: product.stock.total,
-      details: reason || `Increased stock by ${quantity} units in ${location}`,
+      previousValue: previousQuantity,
+      newValue: product.quantity,
+      details: reason || `Increased stock by ${quantity} units`,
       reversible: true
     });
     await activityLog.save();
@@ -417,11 +402,9 @@ router.post('/increase', authenticateToken, [
       product: {
         id: product._id,
         name: product.name,
-        previousQuantity: previousStock.total,
-        newQuantity: product.stock.total,
-        increase: quantity,
-        location,
-        stock: product.stock
+        previousQuantity,
+        newQuantity: product.quantity,
+        increase: quantity
       },
       logId: activityLog._id
     });
@@ -457,33 +440,15 @@ router.post('/reverse/:logId', authenticateToken, requireRole('admin'), async (r
       return res.status(404).json({ message: 'Product not found' });
     }
 
-    const previousStock = {
-      godown: product.stock.godown,
-      store: product.stock.store,
-      total: product.stock.total
-    };
-
-    // Reverse the stock change by adjusting the total and distributing appropriately
-    const changeAmount = activityLog.change;
+    // Reverse the stock change
+    const previousQuantity = product.quantity;
+    product.quantity -= activityLog.change; // Subtract the original change to reverse it
     
-    if (changeAmount > 0) {
-      // If it was an increase, reduce from store first, then godown
-      let remainingToReduce = changeAmount;
-      
-      if (product.stock.store >= remainingToReduce) {
-        product.stock.store -= remainingToReduce;
-      } else {
-        remainingToReduce -= product.stock.store;
-        product.stock.store = 0;
-        product.stock.godown = Math.max(0, product.stock.godown - remainingToReduce);
-      }
-    } else {
-      // If it was a reduction, add back to store
-      product.stock.store += Math.abs(changeAmount);
+    // Ensure quantity doesn't go below 0
+    if (product.quantity < 0) {
+      product.quantity = 0;
     }
     
-    product.stock.total = product.stock.godown + product.stock.store;
-    product.quantity = product.stock.total; // Update legacy field
     await product.save();
 
     // Mark the original log as reversed
@@ -497,9 +462,9 @@ router.post('/reverse/:logId', authenticateToken, requireRole('admin'), async (r
       userId: req.user.id,
       action: 'REVERSE_ADJUSTMENT',
       productId: product._id,
-      change: -changeAmount,
-      previousValue: previousStock.total,
-      newValue: product.stock.total,
+      change: -activityLog.change,
+      previousValue: previousQuantity,
+      newValue: product.quantity,
       details: reason || `Reversed previous ${activityLog.action.toLowerCase()} action`,
       reversible: false
     });
@@ -510,10 +475,9 @@ router.post('/reverse/:logId', authenticateToken, requireRole('admin'), async (r
       product: {
         id: product._id,
         name: product.name,
-        previousQuantity: previousStock.total,
-        newQuantity: product.stock.total,
-        reversedChange: -changeAmount,
-        stock: product.stock
+        previousQuantity,
+        newQuantity: product.quantity,
+        reversedChange: -activityLog.change
       },
       originalLogId: logId,
       reversalLogId: reversalLog._id
@@ -523,7 +487,7 @@ router.post('/reverse/:logId', authenticateToken, requireRole('admin'), async (r
   }
 });
 
-// GET /api/stock/history/:productId - Get stock history for a product (Legacy route)
+// GET /api/stock/history/:productId - Get stock history for a product
 router.get('/history/:productId', authenticateToken, async (req, res) => {
   try {
     const { productId } = req.params;
@@ -556,8 +520,7 @@ router.get('/history/:productId', authenticateToken, async (req, res) => {
       product: {
         id: product._id,
         name: product.name,
-        currentQuantity: product.stock.total,
-        stock: product.stock
+        currentQuantity: product.quantity
       },
       pagination: {
         currentPage: parseInt(page),
@@ -580,7 +543,7 @@ router.get('/recent-activities', authenticateToken, async (req, res) => {
       action: { $in: ['REDUCE_STOCK', 'INCREASE_STOCK', 'BULK_REDUCTION', 'REVERSE_ADJUSTMENT'] }
     })
       .populate('userId', 'username fullName')
-      .populate('productId', 'name qrCode stock')
+      .populate('productId', 'name qrCode')
       .populate('reversedBy', 'username fullName')
       .sort({ createdAt: -1 })
       .limit(parseInt(limit));

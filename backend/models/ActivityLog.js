@@ -20,7 +20,13 @@ const activityLogSchema = new mongoose.Schema({
       'LOGIN',
       'LOGOUT',
       'EXPORT_REPORT',
-      'BULK_REDUCTION'
+      'BULK_REDUCTION',
+      'CREATE_CATEGORY',
+      'UPDATE_CATEGORY',
+      'DELETE_CATEGORY',
+      'STOCK_MOVEMENT',
+      'STOCK_RECEIVED',
+      'STOCK_DELIVERED'
     ]
   },
   productId: {

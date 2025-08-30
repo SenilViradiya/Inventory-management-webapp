@@ -24,6 +24,11 @@ const authenticateToken = async (req, res, next) => {
       return res.status(401).json({ message: 'Invalid or inactive user' });
     }
 
+    // Validate shopId from token
+    if (decoded.shopId && (!user.shop || user.shop._id.toString() !== decoded.shopId)) {
+      return res.status(403).json({ message: 'Invalid shop access' });
+    }
+
     // Update last login
     await User.findByIdAndUpdate(decoded.id, { lastLogin: new Date() });
 

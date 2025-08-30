@@ -3,11 +3,13 @@ const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const Product = require('../models/Product');
 const ActivityLog = require('../models/ActivityLog');
+const Category = require('../models/Category');
 const { authenticateToken, requireRole } = require('../middleware/auth');
+const { uploadSingleToAzure, deleteFromAzure } = require('../middleware/upload');
 const multer = require('multer');
 const path = require('path');
 
-// Configure multer for image uploads
+// Legacy multer configuration for fallback
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, 'uploads/products/');
@@ -32,13 +34,17 @@ const upload = multer({
   }
 });
 
-// Validation rules
+// Validation rules (updated for new stock structure)
 const productValidation = [
   body('name').trim().notEmpty().withMessage('Product name is required'),
   body('price').isFloat({ min: 0 }).withMessage('Price must be a positive number'),
   body('category').optional().isMongoId().withMessage('Valid category ID required'),
   body('expirationDate').isISO8601().withMessage('Valid expiration date is required'),
-  body('quantity').isInt({ min: 0 }).withMessage('Quantity must be a non-negative integer'),
+  // Updated to support new stock structure
+  body('stock.godown').optional().isInt({ min: 0 }).withMessage('Godown stock must be non-negative'),
+  body('stock.store').optional().isInt({ min: 0 }).withMessage('Store stock must be non-negative'),
+  // Keep legacy quantity support for backward compatibility
+  body('quantity').optional().isInt({ min: 0 }).withMessage('Quantity must be a non-negative integer'),
   body('qrCode').trim().notEmpty().withMessage('QR code is required'),
   body('lowStockThreshold').optional().isInt({ min: 0 }).withMessage('Low stock threshold must be non-negative'),
   body('shopId').isMongoId().withMessage('Valid shop ID is required')
@@ -147,8 +153,10 @@ router.get('/qr/:qrCode', authenticateToken, async (req, res) => {
   }
 });
 
-// POST /api/products - Create new product (Admin only)
-router.post('/', authenticateToken, requireRole('admin'), upload.single('image'), productValidation, async (req, res) => {
+// POST /api/products - Create new product (Admin only) - Updated for new stock structure
+router.post('/', authenticateToken, requireRole('admin'), (req, res, next) => {
+  uploadSingleToAzure('image', 'products')(req, res, next);
+}, productValidation, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -161,14 +169,56 @@ router.post('/', authenticateToken, requireRole('admin'), upload.single('image')
       return res.status(400).json({ message: 'Product with this QR code already exists' });
     }
 
+    // Validate category existence
+    const category = await Category.findById(req.body.category);
+    if (!category) {
+      return res.status(400).json({ message: 'Invalid category ID provided' });
+    }
+
     const productData = {
       ...req.body,
       createdBy: req.user.id
     };
 
-    // Add image path if uploaded
+    // Handle stock structure - support both new and legacy formats
+    if (req.body.stock) {
+      // New stock structure provided
+      productData.stock = {
+        godown: parseInt(req.body.stock.godown) || 0,
+        store: parseInt(req.body.stock.store) || 0,
+        total: (parseInt(req.body.stock.godown) || 0) + (parseInt(req.body.stock.store) || 0),
+        reserved: 0
+      };
+      // Set legacy quantity field for backward compatibility
+      productData.quantity = productData.stock.total;
+    } else if (req.body.quantity !== undefined) {
+      // Legacy quantity provided - put all stock in godown by default
+      const quantity = parseInt(req.body.quantity) || 0;
+      productData.stock = {
+        godown: quantity,
+        store: 0,
+        total: quantity,
+        reserved: 0
+      };
+      productData.quantity = quantity;
+    } else {
+      // No stock provided - initialize with zeros
+      productData.stock = {
+        godown: 0,
+        store: 0,
+        total: 0,
+        reserved: 0
+      };
+      productData.quantity = 0;
+    }
+
+    // Add image URL if uploaded to Azure or local path as fallback
     if (req.file) {
-      productData.image = `/uploads/products/${req.file.filename}`;
+      productData.imageUrl = req.file.azureUrl || `/uploads/products/${req.file.filename}`;
+      // Store Azure blob name for future deletion if needed
+      if (req.file.azureBlobName) {
+        productData.azureBlobName = req.file.azureBlobName;
+      }
     }
 
     const product = new Product(productData);
@@ -179,18 +229,21 @@ router.post('/', authenticateToken, requireRole('admin'), upload.single('image')
       userId: req.user.id,
       action: 'CREATE_PRODUCT',
       productId: product._id,
-      details: `Created product: ${product.name}`
+      details: `Created product: ${product.name} with stock - Godown: ${product.stock.godown}, Store: ${product.stock.store}`
     }).save();
 
     await product.populate('createdBy', 'username fullName');
     res.status(201).json(product);
   } catch (error) {
+    console.error('Product creation error:', error);
     res.status(500).json({ message: 'Error creating product', error: error.message });
   }
 });
 
 // PUT /api/products/:id - Update product (Admin only)
-router.put('/:id', authenticateToken, requireRole('admin'), upload.single('image'), async (req, res) => {
+router.put('/:id', authenticateToken, requireRole('admin'), (req, res, next) => {
+  uploadSingleToAzure('image', 'products')(req, res, next);
+}, async (req, res) => {
   try {
     // Only validate fields that are being updated
     const fieldsToValidate = [];
@@ -228,14 +281,27 @@ router.put('/:id', authenticateToken, requireRole('admin'), upload.single('image
       }
     }
 
+    // Delete old Azure blob if new image is uploaded and old one exists
+    if (req.file && product.azureBlobName) {
+      try {
+        await deleteFromAzure(product.azureBlobName);
+      } catch (error) {
+        console.warn('Failed to delete old product image from Azure:', error.message);
+      }
+    }
+
     const updateData = {
       ...req.body,
       updatedBy: req.user.id
     };
 
-    // Add image path if uploaded
+    // Add image URL if uploaded to Azure or local path as fallback
     if (req.file) {
-      updateData.image = `/uploads/products/${req.file.filename}`;
+      updateData.image = req.file.azureUrl || `/uploads/products/${req.file.filename}`;
+      // Store Azure blob name for future deletion if needed
+      if (req.file.azureBlobName) {
+        updateData.azureBlobName = req.file.azureBlobName;
+      }
     }
 
     const updatedProduct = await Product.findByIdAndUpdate(
@@ -328,8 +394,13 @@ router.patch('/:id/quantity', authenticateToken, async (req, res) => {
 // GET /api/products/categories/list - Get all categories
 router.get('/categories/list', authenticateToken, async (req, res) => {
   try {
-    const categories = await Product.distinct('category');
-    res.json(categories.sort());
+    // Validate shopId
+    if (!req.user.shop || !req.user.shop._id) {
+      return res.status(400).json({ message: 'Invalid shop ID' });
+    }
+
+    const categories = await Category.find({ shop: req.user.shop._id });
+    res.json(categories);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching categories', error: error.message });
   }

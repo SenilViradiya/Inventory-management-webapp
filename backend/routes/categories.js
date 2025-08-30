@@ -10,17 +10,15 @@ const { authenticateToken, requirePermission } = require('../middleware/auth');
 // GET /api/categories/list - List all categories with hierarchy
 router.get('/list', authenticateToken, async (req, res) => {
   try {
-    const { shopId, includeProducts = false } = req.query;
+    const { includeProducts = false } = req.query;
 
-    if (!shopId) {
-      return res.status(400).json({ message: 'Shop ID is required' });
+    // Get user's shop from the authenticated user
+    const user = await require('../models/User').findById(req.user.id).populate('shop');
+    if (!user || !user.shop) {
+      return res.status(400).json({ message: 'User shop not found. Please contact administrator.' });
     }
 
-    // Verify user has access to shop
-    const shop = await Shop.findById(shopId);
-    if (!shop) {
-      return res.status(404).json({ message: 'Shop not found' });
-    }
+    const shopId = user.shop._id;
 
     // Get category hierarchy
     const categoryHierarchy = await Category.getHierarchy(shopId);
@@ -57,7 +55,6 @@ router.get('/list', authenticateToken, async (req, res) => {
 // POST /api/categories/create - Create new category
 router.post('/create', authenticateToken, requirePermission('manage_categories'), [
   body('name').trim().notEmpty().withMessage('Category name is required'),
-  body('shopId').isMongoId().withMessage('Valid shop ID is required'),
   body('parent').optional().isMongoId().withMessage('Valid parent category ID required'),
   body('description').optional().trim(),
   body('icon').optional().trim(),
@@ -70,21 +67,15 @@ router.post('/create', authenticateToken, requirePermission('manage_categories')
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { name, shopId, parent, description, icon, color, sortOrder } = req.body;
+    const { name, parent, description, icon, color, sortOrder } = req.body;
 
-    // Verify user has access to shop
-    const shop = await Shop.findById(shopId);
-    if (!shop) {
-      return res.status(404).json({ message: 'Shop not found' });
+    // Get user's shop from the authenticated user
+    const user = await require('../models/User').findById(req.user.id).populate('shop');
+    if (!user || !user.shop) {
+      return res.status(400).json({ message: 'User shop not found. Please contact administrator.' });
     }
 
-    // Verify user is owner or has permission
-    const isOwner = shop.owner.toString() === req.user.id;
-    const isStaff = shop.staff.some(s => s.user.toString() === req.user.id);
-
-    if (!isOwner && !isStaff) {
-      return res.status(403).json({ message: 'Access denied' });
-    }
+    const shopId = user.shop._id;
 
     // Check if category name already exists in this shop
     const existingCategory = await Category.findOne({ 

@@ -57,7 +57,8 @@ router.post('/signup', [
       { 
         id: user._id,
         email: user.email,
-        role: user.role
+        role: user.role,
+        shopId: user.shop,
       },
       process.env.JWT_SECRET || 'fallback_secret',
       { expiresIn: process.env.JWT_EXPIRES_IN || '8h' }
@@ -305,7 +306,8 @@ router.post('/login', [
       { 
         id: user._id,
         email: user.email,
-        role: user.role?.name || user.role
+        role: user.role?.name || user.role,
+        shopId: user.shop,
       },
       process.env.JWT_SECRET || 'fallback_secret',
       { expiresIn: process.env.JWT_EXPIRES_IN || '8h' }

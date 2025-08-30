@@ -12,19 +12,27 @@ interface Product {
   _id: string;
   name: string;
   price: number;
-  quantity: number;
+  quantity: number; // Legacy field for backward compatibility
+  stock?: {
+    godown: number;
+    store: number;
+    total: number;
+    reserved: number;
+  };
   qrCode: string;
   image?: string;
+  imageUrl?: string;
   category: string;
   expirationDate: string;
   description?: string;
+  lowStockThreshold?: number;
   createdAt: string;
   updatedAt: string;
 }
 
 export default function ProductsPage() {
   const { user } = useAuth();
-  const { products, loading: productsLoading, refreshProducts } = useProducts();
+  const { products, categories: apiCategories, loading: productsLoading, categoriesLoading, refreshProducts } = useProducts();
   const router = useRouter();
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -33,7 +41,13 @@ export default function ProductsPage() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
-  const categories = ['all', 'beer', 'wine', 'spirits', 'soft-drinks', 'snacks', 'cigarettes', 'water'];
+  // Create categories array with 'all' option plus dynamic categories
+  const categories = ['all', ...apiCategories.map(cat => cat._id)];
+  const getCategoryDisplayName = (categoryId: string) => {
+    if (categoryId === 'all') return 'All Categories';
+    const category = apiCategories.find(cat => cat._id === categoryId);
+    return category ? category.name : categoryId;
+  };
 
   useEffect(() => {
     if (!user) {
@@ -60,7 +74,10 @@ export default function ProductsPage() {
         case 'price':
           return a.price - b.price;
         case 'stock':
-          return b.quantity - a.quantity;
+          // Use new stock structure, fall back to legacy quantity
+          const aStock = a.stock?.total || a.quantity || 0;
+          const bStock = b.stock?.total || b.quantity || 0;
+          return bStock - aStock;
         case 'category':
           return a.category.localeCompare(b.category);
         default:
@@ -174,7 +191,7 @@ export default function ProductsPage() {
               >
                 {categories.map(category => (
                   <option key={category} value={category}>
-                    {category === 'all' ? 'All Categories' : category.charAt(0).toUpperCase() + category.slice(1).replace('-', ' ')}
+                    {getCategoryDisplayName(category)}
                   </option>
                 ))}
               </select>
@@ -238,21 +255,42 @@ export default function ProductsPage() {
                   <div>QR: {product.qrCode}</div>
                 </div>
 
-                <div className={`inline-block px-2 py-1 rounded-full text-xs font-medium mb-3 ${getStockStatusColor(product.quantity)}`}>
-                  Stock: {product.quantity}
+                {/* Stock Information */}
+                <div className="space-y-2 mb-3">
+                  <div className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${getStockStatusColor(product.stock?.total || product.quantity || 0)}`}>
+                    Total Stock: {product.stock?.total || product.quantity || 0}
+                  </div>
+                  {product.stock && (
+                    <div className="text-xs text-gray-600 space-y-1 bg-gray-50 p-2 rounded">
+                      <div className="flex justify-between">
+                        <span>Godown:</span>
+                        <span className="font-medium">{product.stock.godown}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Store:</span>
+                        <span className="font-medium">{product.stock.store}</span>
+                      </div>
+                      {product.stock.reserved > 0 && (
+                        <div className="flex justify-between text-orange-600">
+                          <span>Reserved:</span>
+                          <span className="font-medium">{product.stock.reserved}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
-                {/* Quantity Controls */}
+                {/* Legacy Quantity Controls (for backward compatibility) */}
                 <div className="flex items-center space-x-2 mb-3">
                   <button
-                    onClick={() => adjustQuantity(product._id, Math.max(0, product.quantity - 1))}
+                    onClick={() => adjustQuantity(product._id, Math.max(0, (product.stock?.total || product.quantity || 0) - 1))}
                     className="w-8 h-8 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-sm font-bold"
                   >
                     -
                   </button>
-                  <span className="font-medium min-w-[3rem] text-center">{product.quantity}</span>
+                  <span className="font-medium min-w-[3rem] text-center">{product.stock?.total || product.quantity || 0}</span>
                   <button
-                    onClick={() => adjustQuantity(product._id, product.quantity + 1)}
+                    onClick={() => adjustQuantity(product._id, (product.stock?.total || product.quantity || 0) + 1)}
                     className="w-8 h-8 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold"
                   >
                     +
@@ -291,6 +329,8 @@ export default function ProductsPage() {
       {(showAddForm || editingProduct) && (
         <ProductForm
           product={editingProduct}
+          categories={apiCategories}
+          categoriesLoading={categoriesLoading}
           onClose={() => {
             setShowAddForm(false);
             setEditingProduct(null);
@@ -307,24 +347,38 @@ export default function ProductsPage() {
 }
 
 // Product Form Component
+interface Category {
+  _id: string;
+  name: string;
+  description?: string;
+  icon?: string;
+  color?: string;
+}
+
 interface ProductFormProps {
   product?: Product | null;
+  categories: Category[];
+  categoriesLoading: boolean;
   onClose: () => void;
   onSuccess: () => void;
 }
 
-function ProductForm({ product, onClose, onSuccess }: ProductFormProps) {
+function ProductForm({ product, categories, categoriesLoading, onClose, onSuccess }: ProductFormProps) {
   const [formData, setFormData] = useState({
     name: product?.name || '',
     price: product?.price || 0,
-    quantity: product?.quantity || 0,
+    quantity: product?.quantity || 0, // Legacy field for backward compatibility
+    godownStock: product?.stock?.godown || 0,
+    storeStock: product?.stock?.store || 0,
+    lowStockThreshold: product?.lowStockThreshold || 10,
     qrCode: product?.qrCode || '',
-    category: product?.category || 'beer',
+    category: product?.category || '',
     description: product?.description || '',
     expirationDate: product?.expirationDate ? product.expirationDate.split('T')[0] : ''
   });
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(
+    product?.imageUrl ? product.imageUrl : 
     product?.image ? `http://localhost:5001${product.image}` : null
   );
   const [isLoading, setIsLoading] = useState(false);
@@ -355,8 +409,8 @@ function ProductForm({ product, onClose, onSuccess }: ProductFormProps) {
       return;
     }
     
-    if (formData.quantity < 0) {
-      toast.error('Quantity cannot be negative');
+    if (formData.godownStock < 0 || formData.storeStock < 0) {
+      toast.error('Stock quantities cannot be negative');
       return;
     }
     
@@ -371,7 +425,16 @@ function ProductForm({ product, onClose, onSuccess }: ProductFormProps) {
       const submitData = new FormData();
       submitData.append('name', formData.name.trim());
       submitData.append('price', formData.price.toString());
-      submitData.append('quantity', formData.quantity.toString());
+      
+      // Send new stock structure
+      submitData.append('stock[godown]', formData.godownStock.toString());
+      submitData.append('stock[store]', formData.storeStock.toString());
+      submitData.append('lowStockThreshold', formData.lowStockThreshold.toString());
+      
+      // Keep legacy quantity for backward compatibility
+      const totalQuantity = formData.godownStock + formData.storeStock;
+      submitData.append('quantity', totalQuantity.toString());
+      
       submitData.append('qrCode', formData.qrCode.trim().toUpperCase());
       submitData.append('category', formData.category);
       submitData.append('description', formData.description.trim());
@@ -492,28 +555,78 @@ function ProductForm({ product, onClose, onSuccess }: ProductFormProps) {
                 <p className="text-xs text-gray-500 mt-1">Price must be greater than £0</p>
               </div>
 
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Godown Stock</label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    value={formData.godownStock === 0 ? '' : formData.godownStock}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value === '' || value === null) {
+                        setFormData({ ...formData, godownStock: 0 });
+                      } else {
+                        const numValue = parseInt(value);
+                        if (!isNaN(numValue) && numValue >= 0) {
+                          setFormData({ ...formData, godownStock: numValue });
+                        }
+                      }
+                    }}
+                    placeholder="Enter godown stock"
+                    className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Stock in storage/warehouse</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Store Stock</label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    value={formData.storeStock === 0 ? '' : formData.storeStock}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value === '' || value === null) {
+                        setFormData({ ...formData, storeStock: 0 });
+                      } else {
+                        const numValue = parseInt(value);
+                        if (!isNaN(numValue) && numValue >= 0) {
+                          setFormData({ ...formData, storeStock: numValue });
+                        }
+                      }
+                    }}
+                    placeholder="Enter store stock"
+                    className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Stock on shop floor</p>
+                </div>
+              </div>
+
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Low Stock Threshold</label>
                 <input
                   type="number"
                   required
                   min="0"
-                  value={formData.quantity === 0 ? '' : formData.quantity}
+                  value={formData.lowStockThreshold === 0 ? '' : formData.lowStockThreshold}
                   onChange={(e) => {
                     const value = e.target.value;
                     if (value === '' || value === null) {
-                      setFormData({ ...formData, quantity: 0 });
+                      setFormData({ ...formData, lowStockThreshold: 0 });
                     } else {
                       const numValue = parseInt(value);
                       if (!isNaN(numValue) && numValue >= 0) {
-                        setFormData({ ...formData, quantity: numValue });
+                        setFormData({ ...formData, lowStockThreshold: numValue });
                       }
                     }
                   }}
-                  placeholder="Enter quantity"
+                  placeholder="Enter low stock threshold"
                   className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
-                <p className="text-xs text-gray-500 mt-1">Minimum quantity is 0</p>
+                <p className="text-xs text-gray-500 mt-1">Alert when total stock falls below this number</p>
               </div>
             </div>
 
@@ -547,14 +660,16 @@ function ProductForm({ product, onClose, onSuccess }: ProductFormProps) {
                 onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                 className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
               >
-                <option value="beer">Beer</option>
-                <option value="wine">Wine</option>
-                <option value="spirits">Spirits</option>
-                <option value="soft-drinks">Soft Drinks</option>
-                <option value="snacks">Snacks</option>
-                <option value="cigarettes">Cigarettes</option>
-                <option value="water">Water</option>
+                <option value="">Select a category...</option>
+                {categories.map(category => (
+                  <option key={category._id} value={category._id}>
+                    {category.icon} {category.name}
+                  </option>
+                ))}
               </select>
+              {categoriesLoading && (
+                <p className="text-xs text-gray-500 mt-1">Loading categories...</p>
+              )}
             </div>
 
             <div>

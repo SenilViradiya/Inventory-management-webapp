@@ -331,6 +331,7 @@ router.post('/login', [
         email: user.email,
         fullName: `${user.firstName} ${user.lastName}`,
         role: user.role?.name || user.role,
+        shopId: user.shop,
         lastLogin: user.lastLogin
       }
     });

@@ -6,7 +6,7 @@ const productSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
-  image: {
+  imageUrl: {
     type: String, // URL or file path
     default: ''
   },

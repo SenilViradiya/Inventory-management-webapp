@@ -80,9 +80,11 @@ const upload = multer({
  */
 const uploadSingleToAzure = (fieldName, folder = '') => {
   return async (req, res, next) => {
+    console.log(`[uploadSingleToAzure] Called for field: ${fieldName}, folder: ${folder}`);
     // Use multer to handle file upload to memory
     upload.single(fieldName)(req, res, async (err) => {
       if (err) {
+        console.error('[uploadSingleToAzure] Multer error:', err);
         if (err instanceof multer.MulterError) {
           if (err.code === 'LIMIT_FILE_SIZE') {
             return res.status(400).json({ message: 'File too large. Maximum size is 10MB.' });
@@ -96,18 +98,22 @@ const uploadSingleToAzure = (fieldName, folder = '') => {
 
       // If no file uploaded, continue
       if (!req.file) {
+        console.log('[uploadSingleToAzure] No file uploaded, continuing.');
         return next();
       }
 
       try {
+        console.log('[uploadSingleToAzure] File received:', req.file.originalname, req.file.mimetype, req.file.size);
         // Upload to Azure Blob Storage if available
         if (azureBlobService.isAvailable()) {
+          console.log('[uploadSingleToAzure] Azure Blob Service is available. Uploading to Azure...');
           const uploadResult = await azureBlobService.uploadFile(
             req.file.buffer,
             req.file.originalname,
             req.file.mimetype,
             folder
           );
+          console.log('[uploadSingleToAzure] Azure upload result:', uploadResult);
 
           // Attach Azure upload result to request
           req.azureFile = uploadResult;
@@ -115,14 +121,14 @@ const uploadSingleToAzure = (fieldName, folder = '') => {
           req.file.azureBlobName = uploadResult.blobName;
         } else {
           // Fallback to local storage if Azure is not configured
-          console.warn('Azure Blob Storage not available, using local storage fallback');
+          console.warn('[uploadSingleToAzure] Azure Blob Storage not available, using local storage fallback');
           // You can implement local storage fallback here if needed
           req.file.localPath = `/uploads/${folder}/${Date.now()}-${req.file.originalname}`;
         }
 
         next();
       } catch (error) {
-        console.error('File upload error:', error);
+        console.error('[uploadSingleToAzure] File upload error:', error);
         res.status(500).json({ 
           message: 'Failed to upload file',
           error: error.message 

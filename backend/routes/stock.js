@@ -275,11 +275,11 @@ router.post('/reduce', authenticateToken, [
       return res.status(404).json({ message: 'Product not found with this QR code' });
     }
 
-    // Check if sufficient stock is available in godown (reduce from godown by QR)
-    if (product.stock.godown < quantity) {
+    // Check if sufficient stock is available in store (assuming reduction is from store)
+    if (product.stock.store < quantity) {
       return res.status(400).json({ 
-        message: 'Insufficient stock in godown',
-        availableStock: product.stock.godown,
+        message: 'Insufficient stock in store',
+        availableStock: product.stock.store,
         requestedQuantity: quantity
       });
     }
@@ -290,17 +290,17 @@ router.post('/reduce', authenticateToken, [
       total: product.stock.total
     };
 
-    // Reduce from godown stock
-    product.stock.godown -= quantity;
+    // Reduce from store stock
+    product.stock.store -= quantity;
     product.stock.total = product.stock.godown + product.stock.store;
     product.quantity = product.stock.total; // Update legacy field
     await product.save();
 
-    // Create stock movement record (godown_out)
+    // Create stock movement record
     const stockMovement = new StockMovement({
       productId: product._id,
-      movementType: 'godown_out',
-      fromLocation: 'godown',
+      movementType: 'store_out',
+      fromLocation: 'store',
       toLocation: 'customer',
       quantity,
       previousStock,
@@ -309,7 +309,7 @@ router.post('/reduce', authenticateToken, [
         store: product.stock.store,
         total: product.stock.total
       },
-      reason: reason || 'QR Code Reduction (godown)',
+      reason: reason || 'QR Code Sale',
       performedBy: req.user.id
     });
     await stockMovement.save();
@@ -322,13 +322,13 @@ router.post('/reduce', authenticateToken, [
       change: -quantity,
       previousValue: previousStock.total,
       newValue: product.stock.total,
-      details: reason || `Reduced ${quantity} units from godown via QR code`,
+      details: reason || `Reduced stock by ${quantity} units via QR code`,
       reversible: true
     });
     await activityLog.save();
 
     res.json({
-      message: 'Stock reduced successfully (from godown)',
+      message: 'Stock reduced successfully',
       product: {
         id: product._id,
         name: product.name,
@@ -343,97 +343,6 @@ router.post('/reduce', authenticateToken, [
     res.status(500).json({ message: 'Error reducing stock', error: error.message });
   }
 });
-
-  // @desc    Remove stock from godown (godown_out)
-  // @route   POST /api/stock/godown-out
-  // @access  Private
-  router.post('/godown-out', authenticateToken, [
-    body('productId').isMongoId().withMessage('Valid product ID is required'),
-    body('quantity').isInt({ min: 1 }).withMessage('Quantity must be a positive integer'),
-    body('toLocation').optional().isString().withMessage('toLocation must be a string'),
-    body('reason').optional().isString().withMessage('Reason must be a string')
-  ], async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-      }
-
-      const { productId, quantity, toLocation = 'customer', reason = '' } = req.body;
-
-      const product = await Product.findById(productId);
-      if (!product) {
-        return res.status(404).json({ message: 'Product not found' });
-      }
-
-      if (product.stock.godown < quantity) {
-        return res.status(400).json({
-          message: 'Insufficient stock in godown',
-          availableStock: product.stock.godown,
-          requestedQuantity: quantity
-        });
-      }
-
-      const previousStock = {
-        godown: product.stock.godown,
-        store: product.stock.store,
-        total: product.stock.total
-      };
-
-      // Reduce from godown
-      product.stock.godown -= quantity;
-      product.stock.total = product.stock.godown + product.stock.store;
-      product.quantity = product.stock.total; // Update legacy field
-      await product.save();
-
-      // Create stock movement record
-      const stockMovement = new StockMovement({
-        productId: product._id,
-        movementType: 'godown_out',
-        fromLocation: 'godown',
-        toLocation,
-        quantity,
-        previousStock,
-        newStock: {
-          godown: product.stock.godown,
-          store: product.stock.store,
-          total: product.stock.total
-        },
-        reason: reason || `Removed from godown to ${toLocation}`,
-        performedBy: req.user.id
-      });
-      await stockMovement.save();
-
-      // Log the activity
-      const activityLog = new ActivityLog({
-        userId: req.user.id,
-        action: quantity > 1 ? 'BULK_REDUCTION' : 'REDUCE_STOCK',
-        productId: product._id,
-        change: -quantity,
-        previousValue: previousStock.total,
-        newValue: product.stock.total,
-        details: reason || `Removed ${quantity} units from godown to ${toLocation}`,
-        reversible: true
-      });
-      await activityLog.save();
-
-      res.json({
-        message: 'Stock removed from godown successfully',
-        product: {
-          id: product._id,
-          name: product.name,
-          previousQuantity: previousStock.total,
-          newQuantity: product.stock.total,
-          reduction: quantity,
-          stock: product.stock
-        },
-        logId: activityLog._id
-      });
-    } catch (error) {
-      console.error('Remove from godown error:', error);
-      res.status(500).json({ message: 'Error removing stock from godown', error: error.message });
-    }
-  });
 
 // POST /api/stock/increase - Increase stock (Admin and Staff) - Updated for new structure
 router.post('/increase', authenticateToken, [
@@ -488,110 +397,6 @@ router.post('/increase', authenticateToken, [
       reason: reason || `Stock increase to ${location}`,
       performedBy: req.user.id
     });
-
-  // POST /api/stock/reduce-by-product - Reduce stock by productId from godown or store
-  router.post('/reduce-by-product', authenticateToken, [
-    body('productId').isMongoId().withMessage('Valid product ID is required'),
-    body('quantity').isInt({ min: 1 }).withMessage('Quantity must be a positive integer'),
-    body('location').isIn(['godown', 'store']).withMessage('Location must be godown or store'),
-    body('reason').optional().isString().withMessage('Reason must be a string')
-  ], async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-      }
-
-      const { productId, quantity, location = 'store', reason = '' } = req.body;
-
-      const product = await Product.findById(productId);
-      if (!product) {
-        return res.status(404).json({ message: 'Product not found' });
-      }
-
-      // Check availability in requested location
-      if (location === 'godown' && product.stock.godown < quantity) {
-        return res.status(400).json({
-          message: 'Insufficient stock in godown',
-          availableStock: product.stock.godown,
-          requestedQuantity: quantity
-        });
-      }
-
-      if (location === 'store' && product.stock.store < quantity) {
-        return res.status(400).json({
-          message: 'Insufficient stock in store',
-          availableStock: product.stock.store,
-          requestedQuantity: quantity
-        });
-      }
-
-      const previousStock = {
-        godown: product.stock.godown,
-        store: product.stock.store,
-        total: product.stock.total
-      };
-
-      // Reduce from the chosen location
-      if (location === 'godown') {
-        product.stock.godown -= quantity;
-      } else {
-        product.stock.store -= quantity;
-      }
-
-      product.stock.total = product.stock.godown + product.stock.store;
-      product.quantity = product.stock.total; // legacy field
-      await product.save();
-
-      // Create stock movement
-      const stockMovement = new StockMovement({
-        productId: product._id,
-        movementType: location === 'godown' ? 'godown_out' : 'store_out',
-        fromLocation: location,
-        toLocation: 'customer',
-        quantity,
-        previousStock,
-        newStock: {
-          godown: product.stock.godown,
-          store: product.stock.store,
-          total: product.stock.total
-        },
-        reason: reason || `Reduced from ${location}`,
-        performedBy: req.user.id
-      });
-      await stockMovement.save();
-
-      // Log activity
-      const activityLog = new ActivityLog({
-        userId: req.user.id,
-        action: quantity > 1 ? 'BULK_REDUCTION' : 'REDUCE_STOCK',
-        productId: product._id,
-        change: -quantity,
-        previousValue: previousStock.total,
-        newValue: product.stock.total,
-        details: reason || `Reduced ${quantity} units from ${location}`,
-        reversible: true
-      });
-      await activityLog.save();
-
-      res.json({
-        message: `Stock reduced from ${location} successfully`,
-        product: {
-          id: product._id,
-          name: product.name,
-          previousQuantity: previousStock.total,
-          newQuantity: product.stock.total,
-          reduction: quantity,
-          stock: product.stock
-        },
-        logId: activityLog._id
-      });
-
-    } catch (error) {
-      console.error('Reduce by product error:', error);
-      res.status(500).json({ message: 'Error reducing stock', error: error.message });
-    }
-  });
     await stockMovement.save();
 
     // Log the activity (legacy support)

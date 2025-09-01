@@ -19,7 +19,12 @@ const productSchema = new mongoose.Schema({
     required: true,
     min: 0
   },
-  category: {
+  categoryId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Category',
+    required: false
+  },
+  categoryName: {
     type: String,
     required: true,
     trim: true
@@ -87,7 +92,8 @@ const productSchema = new mongoose.Schema({
 
 // Index for faster queries
 productSchema.index({ qrCode: 1 });
-productSchema.index({ category: 1 });
+productSchema.index({ categoryName: 1 });
+productSchema.index({ categoryId: 1 });
 productSchema.index({ expirationDate: 1 });
 productSchema.index({ quantity: 1 });
 productSchema.index({ 'stock.total': 1 });

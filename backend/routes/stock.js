@@ -275,11 +275,11 @@ router.post('/reduce', authenticateToken, [
       return res.status(404).json({ message: 'Product not found with this QR code' });
     }
 
-    // Check if sufficient stock is available in store (assuming reduction is from store)
-    if (product.stock.store < quantity) {
+    // Check if sufficient stock is available in godown (reduce from godown by QR)
+    if (product.stock.godown < quantity) {
       return res.status(400).json({ 
-        message: 'Insufficient stock in store',
-        availableStock: product.stock.store,
+        message: 'Insufficient stock in godown',
+        availableStock: product.stock.godown,
         requestedQuantity: quantity
       });
     }
@@ -290,17 +290,17 @@ router.post('/reduce', authenticateToken, [
       total: product.stock.total
     };
 
-    // Reduce from store stock
-    product.stock.store -= quantity;
+    // Reduce from godown stock
+    product.stock.godown -= quantity;
     product.stock.total = product.stock.godown + product.stock.store;
     product.quantity = product.stock.total; // Update legacy field
     await product.save();
 
-    // Create stock movement record
+    // Create stock movement record (godown_out)
     const stockMovement = new StockMovement({
       productId: product._id,
-      movementType: 'store_out',
-      fromLocation: 'store',
+      movementType: 'godown_out',
+      fromLocation: 'godown',
       toLocation: 'customer',
       quantity,
       previousStock,
@@ -309,7 +309,7 @@ router.post('/reduce', authenticateToken, [
         store: product.stock.store,
         total: product.stock.total
       },
-      reason: reason || 'QR Code Sale',
+      reason: reason || 'QR Code Reduction (godown)',
       performedBy: req.user.id
     });
     await stockMovement.save();
@@ -322,13 +322,13 @@ router.post('/reduce', authenticateToken, [
       change: -quantity,
       previousValue: previousStock.total,
       newValue: product.stock.total,
-      details: reason || `Reduced stock by ${quantity} units via QR code`,
+      details: reason || `Reduced ${quantity} units from godown via QR code`,
       reversible: true
     });
     await activityLog.save();
 
     res.json({
-      message: 'Stock reduced successfully',
+      message: 'Stock reduced successfully (from godown)',
       product: {
         id: product._id,
         name: product.name,

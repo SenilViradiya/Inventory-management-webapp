@@ -13,6 +13,7 @@ interface User {
   fullName: string;
   role: 'admin' | 'staff';
   lastLogin: string;
+  shop?: string; // Add shopId for product creation
 }
 
 interface AuthContextType {

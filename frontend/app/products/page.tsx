@@ -395,56 +395,56 @@ function ProductForm({ product, categories, categoriesLoading, onClose, onSucces
     }
   };
 
+  const { user } = useAuth();
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     // Validate form data
     if (!formData.name.trim()) {
       toast.error('Product name is required');
       return;
     }
-    
     if (formData.price <= 0) {
       toast.error('Price must be greater than 0');
       return;
     }
-    
     if (formData.godownStock < 0 || formData.storeStock < 0) {
       toast.error('Stock quantities cannot be negative');
       return;
     }
-    
     if (!formData.qrCode.trim()) {
       toast.error('QR Code is required');
       return;
     }
-    
+    if (!user || !user.id) {
+      toast.error('User not found. Please login again.');
+      return;
+    }
+    if (!user.shop) {
+      toast.error('No shop assigned to your user. Cannot add product.');
+      return;
+    }
     setIsLoading(true);
-
     try {
       const submitData = new FormData();
       submitData.append('name', formData.name.trim());
       submitData.append('price', formData.price.toString());
-      
       // Send new stock structure
       submitData.append('stock[godown]', formData.godownStock.toString());
       submitData.append('stock[store]', formData.storeStock.toString());
       submitData.append('lowStockThreshold', formData.lowStockThreshold.toString());
-      
       // Keep legacy quantity for backward compatibility
       const totalQuantity = formData.godownStock + formData.storeStock;
       submitData.append('quantity', totalQuantity.toString());
-      
       submitData.append('qrCode', formData.qrCode.trim().toUpperCase());
       submitData.append('category', formData.category);
       submitData.append('description', formData.description.trim());
+      submitData.append('shopId', user.shop); // Add shopId from user context
       if (formData.expirationDate) {
         submitData.append('expirationDate', formData.expirationDate);
       }
       if (selectedImage) {
         submitData.append('image', selectedImage);
       }
-
       if (product) {
         await productsAPI.update(product._id, submitData);
         toast.success('Product updated successfully');

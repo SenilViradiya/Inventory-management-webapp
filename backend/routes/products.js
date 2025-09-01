@@ -297,7 +297,7 @@ router.put('/:id', authenticateToken, requireRole('admin'), (req, res, next) => 
 
     // Add image URL if uploaded to Azure or local path as fallback
     if (req.file) {
-      updateData.image = req.file.azureUrl || `/uploads/products/${req.file.filename}`;
+  updateData.imageUrl = req.file.azureUrl || `/uploads/products/${req.file.filename}`;
       // Store Azure blob name for future deletion if needed
       if (req.file.azureBlobName) {
         updateData.azureBlobName = req.file.azureBlobName;

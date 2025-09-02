@@ -83,6 +83,250 @@ router.post('/move-to-godown', authenticateToken, async (req, res) => {
   }
 });
 
+// @desc    Bulk move stock from godown to store
+// @route   POST /api/stock/bulk-move-to-store
+// @access  Private
+router.post('/bulk-move-to-store', authenticateToken, [
+  body('movements').isArray({ min: 1 }).withMessage('Movements array is required'),
+  body('movements.*.quantity').isInt({ min: 1 }).withMessage('Quantity must be a positive integer'),
+  body('movements.*.reason').optional().isString().withMessage('Reason must be a string'),
+  body('movements.*.notes').optional().isString().withMessage('Notes must be a string')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        errors: errors.array()
+      });
+    }
+
+    const { movements, globalReason, globalNotes } = req.body;
+    const results = [];
+    const failures = [];
+    let totalMoved = 0;
+
+    // Process each movement
+    for (let i = 0; i < movements.length; i++) {
+      const movement = movements[i];
+      try {
+        // Check if productId or qrCode is provided
+        if (!movement.productId && !movement.qrCode) {
+          failures.push({
+            productId: movement.productId || movement.qrCode,
+            quantity: movement.quantity,
+            status: 'failed',
+            error: 'Either productId or qrCode is required'
+          });
+          continue;
+        }
+
+        let product;
+        let productIdentifier;
+
+        // Find product by either productId or qrCode
+        if (movement.productId) {
+          // Check if it's a valid MongoDB ObjectId
+          const mongoose = require('mongoose');
+          if (mongoose.Types.ObjectId.isValid(movement.productId)) {
+            product = await Product.findById(movement.productId);
+            productIdentifier = movement.productId;
+          } else {
+            // If not a valid ObjectId, treat it as a qrCode
+            product = await Product.findOne({ qrCode: movement.productId });
+            productIdentifier = movement.productId;
+          }
+        } else if (movement.qrCode) {
+          product = await Product.findOne({ qrCode: movement.qrCode });
+          productIdentifier = movement.qrCode;
+        }
+
+        if (!product) {
+          failures.push({
+            productId: productIdentifier,
+            quantity: movement.quantity,
+            status: 'failed',
+            error: 'Product not found'
+          });
+          continue;
+        }
+
+        const result = await StockService.moveGodownToStore(
+          product._id,
+          parseInt(movement.quantity),
+          req.user._id,
+          movement.reason || globalReason || 'Bulk move to store',
+          movement.notes || globalNotes
+        );
+
+        results.push({
+          productId: product._id,
+          productName: product.name,
+          qrCode: product.qrCode,
+          quantity: movement.quantity,
+          status: 'success',
+          data: result
+        });
+        totalMoved += movement.quantity;
+
+      } catch (error) {
+        failures.push({
+          productId: movement.productId || movement.qrCode,
+          quantity: movement.quantity,
+          status: 'failed',
+          error: error.message
+        });
+      }
+    }
+
+    const successCount = results.length;
+    const failureCount = failures.length;
+
+    res.status(successCount > 0 ? 200 : 400).json({
+      success: successCount > 0,
+      message: `Bulk move completed. ${successCount} successful, ${failureCount} failed. Total ${totalMoved} units moved.`,
+      summary: {
+        totalProcessed: movements.length,
+        successful: successCount,
+        failed: failureCount,
+        totalQuantityMoved: totalMoved
+      },
+      results,
+      failures
+    });
+
+  } catch (error) {
+    console.error('Bulk move to store error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error during bulk move',
+      error: error.message
+    });
+  }
+});
+
+// @desc    Bulk move stock from store to godown
+// @route   POST /api/stock/bulk-move-to-godown
+// @access  Private
+router.post('/bulk-move-to-godown', authenticateToken, [
+  body('movements').isArray({ min: 1 }).withMessage('Movements array is required'),
+  body('movements.*.quantity').isInt({ min: 1 }).withMessage('Quantity must be a positive integer'),
+  body('movements.*.reason').optional().isString().withMessage('Reason must be a string'),
+  body('movements.*.notes').optional().isString().withMessage('Notes must be a string')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        errors: errors.array()
+      });
+    }
+
+    const { movements, globalReason, globalNotes } = req.body;
+    const results = [];
+    const failures = [];
+    let totalMoved = 0;
+
+    // Process each movement
+    for (let i = 0; i < movements.length; i++) {
+      const movement = movements[i];
+      try {
+        // Check if productId or qrCode is provided
+        if (!movement.productId && !movement.qrCode) {
+          failures.push({
+            productId: movement.productId || movement.qrCode,
+            quantity: movement.quantity,
+            status: 'failed',
+            error: 'Either productId or qrCode is required'
+          });
+          continue;
+        }
+
+        let product;
+        let productIdentifier;
+
+        // Find product by either productId or qrCode
+        if (movement.productId) {
+          // Check if it's a valid MongoDB ObjectId
+          const mongoose = require('mongoose');
+          if (mongoose.Types.ObjectId.isValid(movement.productId)) {
+            product = await Product.findById(movement.productId);
+            productIdentifier = movement.productId;
+          } else {
+            // If not a valid ObjectId, treat it as a qrCode
+            product = await Product.findOne({ qrCode: movement.productId });
+            productIdentifier = movement.productId;
+          }
+        } else if (movement.qrCode) {
+          product = await Product.findOne({ qrCode: movement.qrCode });
+          productIdentifier = movement.qrCode;
+        }
+
+        if (!product) {
+          failures.push({
+            productId: productIdentifier,
+            quantity: movement.quantity,
+            status: 'failed',
+            error: 'Product not found'
+          });
+          continue;
+        }
+
+        const result = await StockService.moveStoreToGodown(
+          product._id,
+          parseInt(movement.quantity),
+          req.user._id,
+          movement.reason || globalReason || 'Bulk move to godown',
+          movement.notes || globalNotes
+        );
+
+        results.push({
+          productId: product._id,
+          productName: product.name,
+          qrCode: product.qrCode,
+          quantity: movement.quantity,
+          status: 'success',
+          data: result
+        });
+        totalMoved += movement.quantity;
+
+      } catch (error) {
+        failures.push({
+          productId: movement.productId || movement.qrCode,
+          quantity: movement.quantity,
+          status: 'failed',
+          error: error.message
+        });
+      }
+    }
+
+    const successCount = results.length;
+    const failureCount = failures.length;
+
+    res.status(successCount > 0 ? 200 : 400).json({
+      success: successCount > 0,
+      message: `Bulk move completed. ${successCount} successful, ${failureCount} failed. Total ${totalMoved} units moved.`,
+      summary: {
+        totalProcessed: movements.length,
+        successful: successCount,
+        failed: failureCount,
+        totalQuantityMoved: totalMoved
+      },
+      results,
+      failures
+    });
+
+  } catch (error) {
+    console.error('Bulk move to godown error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error during bulk move',
+      error: error.message
+    });
+  }
+});
+
 // @desc    Add stock to godown (new delivery)
 // @route   POST /api/stock/add-godown
 // @access  Private
@@ -275,11 +519,11 @@ router.post('/reduce', authenticateToken, [
       return res.status(404).json({ message: 'Product not found with this QR code' });
     }
 
-    // Check if sufficient stock is available in store (assuming reduction is from store)
-    if (product.stock.store < quantity) {
+    // Check if sufficient stock is available in godown (reduce from godown by default)
+    if (product.stock.godown < quantity) {
       return res.status(400).json({ 
-        message: 'Insufficient stock in store',
-        availableStock: product.stock.store,
+        message: 'Insufficient stock in godown',
+        availableStock: product.stock.godown,
         requestedQuantity: quantity
       });
     }
@@ -290,8 +534,8 @@ router.post('/reduce', authenticateToken, [
       total: product.stock.total
     };
 
-    // Reduce from store stock
-    product.stock.store -= quantity;
+    // Reduce from godown stock
+    product.stock.godown -= quantity;
     product.stock.total = product.stock.godown + product.stock.store;
     product.quantity = product.stock.total; // Update legacy field
     await product.save();
@@ -299,8 +543,8 @@ router.post('/reduce', authenticateToken, [
     // Create stock movement record
     const stockMovement = new StockMovement({
       productId: product._id,
-      movementType: 'store_out',
-      fromLocation: 'store',
+      movementType: 'godown_out',
+      fromLocation: 'godown',
       toLocation: 'customer',
       quantity,
       previousStock,

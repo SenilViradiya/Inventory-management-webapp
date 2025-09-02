@@ -274,11 +274,11 @@ router.post('/reduce', authenticateToken, [
       return res.status(404).json({ message: 'Product not found with this QR code' });
     }
 
-    // Check if sufficient stock is available in store (assuming reduction is from store)
-    if (product.stock.store < quantity) {
+    // Check if sufficient stock is available in godown (reduce from godown by default)
+    if (product.stock.godown < quantity) {
       return res.status(400).json({ 
-        message: 'Insufficient stock in store',
-        availableStock: product.stock.store,
+        message: 'Insufficient stock in godown',
+        availableStock: product.stock.godown,
         requestedQuantity: quantity
       });
     }
@@ -289,8 +289,8 @@ router.post('/reduce', authenticateToken, [
       total: product.stock.total
     };
 
-    // Reduce from store stock
-    product.stock.store -= quantity;
+    // Reduce from godown stock
+    product.stock.godown -= quantity;
     product.stock.total = product.stock.godown + product.stock.store;
     product.quantity = product.stock.total; // Update legacy field
     await product.save();
@@ -298,8 +298,8 @@ router.post('/reduce', authenticateToken, [
     // Create stock movement record
     const stockMovement = new StockMovement({
       productId: product._id,
-      movementType: 'store_out',
-      fromLocation: 'store',
+      movementType: 'godown_out',
+      fromLocation: 'godown',
       toLocation: 'customer',
       quantity,
       previousStock,
@@ -335,24 +335,6 @@ router.post('/reduce', authenticateToken, [
         newQuantity: product.stock.total,
         reduction: quantity,
         stock: product.stock
-      },
-      logId: activityLog._id
-    });
-  } catch (error) {
-    res.status(500).json({ message: 'Error reducing stock', error: error.message });
-  }
-});
-    });
-    await activityLog.save();
-
-    res.json({
-      message: 'Stock reduced successfully',
-      product: {
-        id: product._id,
-        name: product.name,
-        previousQuantity,
-        newQuantity: product.quantity,
-        reduction: quantity
       },
       logId: activityLog._id
     });

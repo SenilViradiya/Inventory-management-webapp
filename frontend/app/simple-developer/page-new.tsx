@@ -191,19 +191,13 @@ export default function DeveloperDashboard() {
   const fetchUsers = async () => {
     try {
       const token = localStorage.getItem('token');
-      console.log('Fetching users with token:', token ? 'Token exists' : 'No token');
-      
       const response = await fetch('/api/users', {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
-      
-      console.log('Users response status:', response.status);
       const data = await response.json();
-      console.log('Users data:', data);
-      
       setUsers(data.users || []);
       
       // Update user stats
@@ -223,19 +217,13 @@ export default function DeveloperDashboard() {
   const fetchOrganizations = async () => {
     try {
       const token = localStorage.getItem('token');
-      console.log('Fetching organizations with token:', token ? 'Token exists' : 'No token');
-      
       const response = await fetch('/api/businesses', {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
-      
-      console.log('Organizations response status:', response.status);
       const data = await response.json();
-      console.log('Organizations data:', data);
-      
       setOrganizations(data.businesses || []);
       setBusinessStats(data.stats || { total: 0, active: 0, trial: 0, expired: 0 });
       
@@ -276,15 +264,7 @@ export default function DeveloperDashboard() {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          username: formData.username,
-          email: formData.email,
-          password: formData.password,
-          fullName: formData.fullName,
-          phone: formData.phone,
-          role: formData.role,
-          businessId: formData.businessId || null
-        })
+        body: JSON.stringify(formData)
       });
 
       if (response.ok) {
@@ -299,14 +279,9 @@ export default function DeveloperDashboard() {
           businessId: ''
         });
         fetchUsers();
-        alert('User created successfully!');
-      } else {
-        const errorData = await response.json();
-        alert('Error creating user: ' + (errorData.message || 'Unknown error'));
       }
     } catch (error) {
       console.error('Error creating user:', error);
-      alert('Error creating user: ' + error.message);
     }
   };
 
@@ -358,14 +333,9 @@ export default function DeveloperDashboard() {
           maxProducts: 100
         });
         fetchOrganizations();
-        alert('Organization created successfully!');
-      } else {
-        const errorData = await response.json();
-        alert('Error creating organization: ' + (errorData.message || 'Unknown error'));
       }
     } catch (error) {
       console.error('Error creating organization:', error);
-      alert('Error creating organization: ' + error.message);
     }
   };
 
@@ -406,41 +376,9 @@ export default function DeveloperDashboard() {
 
       if (response.ok) {
         fetchOrganizations();
-        alert('Organization deleted successfully!');
-      } else {
-        const errorData = await response.json();
-        alert('Error deleting organization: ' + (errorData.message || 'Unknown error'));
       }
     } catch (error) {
       console.error('Error deleting organization:', error);
-      alert('Error deleting organization: ' + error.message);
-    }
-  };
-
-  const handleAssignUserToOrganization = async (userId: string, organizationId: string) => {
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`/api/users/${userId}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          businessId: organizationId
-        })
-      });
-
-      if (response.ok) {
-        fetchUsers();
-        alert('User assigned to organization successfully!');
-      } else {
-        const errorData = await response.json();
-        alert('Error assigning user: ' + (errorData.message || 'Unknown error'));
-      }
-    } catch (error) {
-      console.error('Error assigning user to organization:', error);
-      alert('Error assigning user: ' + error.message);
     }
   };
 
@@ -735,32 +673,13 @@ export default function DeveloperDashboard() {
                           <button
                             onClick={() => handleToggleUserStatus(user._id, user.isActive)}
                             className="text-blue-600 hover:text-blue-900"
-                            title={user.isActive ? 'Deactivate User' : 'Activate User'}
                           >
                             {user.isActive ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                           </button>
-                          <button 
-                            className="text-green-600 hover:text-green-900"
-                            title="Edit User"
-                          >
+                          <button className="text-green-600 hover:text-green-900">
                             <Edit className="h-4 w-4" />
                           </button>
-                          <button 
-                            className="text-purple-600 hover:text-purple-900"
-                            title="Assign to Organization"
-                            onClick={() => {
-                              const orgId = prompt('Enter Organization ID to assign user to:');
-                              if (orgId) {
-                                handleAssignUserToOrganization(user._id, orgId);
-                              }
-                            }}
-                          >
-                            <Building2 className="h-4 w-4" />
-                          </button>
-                          <button 
-                            className="text-red-600 hover:text-red-900"
-                            title="Delete User"
-                          >
+                          <button className="text-red-600 hover:text-red-900">
                             <Trash2 className="h-4 w-4" />
                           </button>
                         </div>
@@ -1046,21 +965,6 @@ export default function DeveloperDashboard() {
                     <option value="staff">Staff</option>
                     <option value="manager">Manager</option>
                     <option value="admin">Admin</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Organization (Optional)</label>
-                  <select
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                    value={formData.businessId}
-                    onChange={(e) => setFormData({...formData, businessId: e.target.value})}
-                  >
-                    <option value="">No Organization</option>
-                    {organizations.map((org) => (
-                      <option key={org._id} value={org._id}>
-                        {org.name} ({org.organizationType})
-                      </option>
-                    ))}
                   </select>
                 </div>
                 <div className="flex justify-end space-x-2 pt-4">

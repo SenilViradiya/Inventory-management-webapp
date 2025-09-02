@@ -45,7 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const userData = JSON.parse(storedUser);
         setToken(storedToken);
         setUser(userData);
-        
+
         // Set default authorization header
         api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
       } catch (error) {
@@ -55,7 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         Cookies.remove('userData');
       }
     }
-    
+
     // Set loading to false immediately after checking - no delay needed
     setIsLoading(false);
   }, []);
@@ -63,13 +63,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (email: string, password: string) => {
     try {
       setIsLoading(true);
-      
+
       const response = await api.post('/users/login', { email, password });
       const { token: authToken, user: userData } = response.data;
 
       // Store in cookies (expires in 8 hours)
-      Cookies.set('authToken', authToken, { expires: 1/3 });
-      Cookies.set('userData', JSON.stringify(userData), { expires: 1/3 });
+      Cookies.set('authToken', authToken, { expires: 1 / 3 });
+      Cookies.set('userData', JSON.stringify(userData), { expires: 1 / 3 });
 
       // Set state
       setToken(authToken);
@@ -79,12 +79,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       api.defaults.headers.common['Authorization'] = `Bearer ${authToken}`;
 
       toast.success('Login successful!');
-      
+
       // Small delay before redirect to ensure state is updated
       setTimeout(() => {
         router.push('/dashboard');
       }, 100);
-      
+
     } catch (error: any) {
       const message = error.response?.data?.message || 'Login failed';
       toast.error(message);
@@ -107,7 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     delete api.defaults.headers.common['Authorization'];
 
     toast.success('Logged out successfully');
-    
+
     // Redirect to login
     router.push('/login');
   };
@@ -125,9 +125,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (user) {
       const updatedUser = { ...user, ...userData };
       setUser(updatedUser);
-      
+
       // Update stored data
-      Cookies.set('userData', JSON.stringify(updatedUser), { expires: 1/3 });
+      Cookies.set('userData', JSON.stringify(updatedUser), { expires: 1 / 3 });
     }
   };
 

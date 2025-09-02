@@ -3,14 +3,14 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../contexts/AuthContext';
-import { 
-  LayoutDashboard, 
-  Package, 
-  ScanLine, 
-  AlertTriangle, 
-  BarChart3, 
-  FileText, 
-  Users, 
+import {
+  LayoutDashboard,
+  Package,
+  ScanLine,
+  AlertTriangle,
+  BarChart3,
+  FileText,
+  Users,
   LogOut,
   User,
   ArrowRightLeft,
@@ -34,7 +34,10 @@ const Navigation = () => {
     { href: '/alerts', icon: AlertTriangle, label: 'Alerts' },
     { href: '/analytics', icon: BarChart3, label: 'Analytics' },
     { href: '/reports', icon: FileText, label: 'Reports' },
-    ...(user?.role === 'admin' ? [{ href: '/users', icon: Users, label: 'Users' }] : []),
+    ...(user?.role === 'admin' ? [
+      { href: '/org', icon: Users, label: 'Organization' },
+      { href: '/users', icon: Users, label: 'Users' }
+    ] : []),
     { href: '/settings', icon: Settings, label: 'Categories' },
     { href: '/shop-settings', icon: Settings, label: 'Shop Settings' },
   ];
@@ -76,16 +79,15 @@ const Navigation = () => {
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = typeof window !== 'undefined' && window.location.pathname === item.href;
-            
+
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center space-x-2 px-4 py-2 rounded-lg whitespace-nowrap transition-colors ${
-                  isActive
-                    ? 'bg-blue-500 text-white'
-                    : 'text-gray-700 hover:bg-gray-100'
-                }`}
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg whitespace-nowrap transition-colors ${isActive
+                  ? 'bg-blue-500 text-white'
+                  : 'text-gray-700 hover:bg-gray-100'
+                  }`}
               >
                 <Icon className="h-4 w-4" />
                 <span className="text-sm font-medium">{item.label}</span>

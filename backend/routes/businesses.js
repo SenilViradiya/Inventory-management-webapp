@@ -8,11 +8,25 @@ const { authenticateToken, requireDeveloper } = require('../middleware/auth');
 const isDeveloper = async (req, res, next) => {
   try {
     const user = await User.findById(req.user.id).populate('role');
-    if (!user || (user.role.name !== 'superadmin' && !user.permissions.includes('system:admin'))) {
-      return res.status(403).json({ message: 'Access denied. Developer privileges required.' });
+    if (!user) {
+      return res.status(403).json({ message: 'User not found.' });
+    }
+    
+    // Allow superadmin, developer, and admin users
+    const allowedRoles = ['superadmin', 'developer', 'admin'];
+    const hasPermission = allowedRoles.includes(user.role.name) || 
+                         (user.permissions && user.permissions.includes('system:admin'));
+    
+    if (!hasPermission) {
+      return res.status(403).json({ 
+        message: 'Access denied. Developer/Admin privileges required.',
+        userRole: user.role.name,
+        userPermissions: user.permissions || []
+      });
     }
     next();
   } catch (error) {
+    console.error('isDeveloper middleware error:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };

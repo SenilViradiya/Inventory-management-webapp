@@ -47,10 +47,13 @@ export default function LoginPage() {
     }
   };
 
-  const fillDemoCredentials = (role: 'admin' | 'staff') => {
+  const fillDemoCredentials = (role: 'admin' | 'staff' | 'developer') => {
     if (role === 'admin') {
       setEmail('admin@offlicense.com');
       setPassword('admin123');
+    } else if (role === 'developer') {
+      setEmail('developer@admin.com');
+      setPassword('Dev@123456');
     } else {
       setEmail('staff1@offlicense.com');
       setPassword('staff123');
@@ -134,20 +137,27 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <div className="mt-6 grid grid-cols-2 gap-3">
+            <div className="mt-6 grid grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={() => fillDemoCredentials('admin')}
-                className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                className="w-full inline-flex justify-center py-2 px-3 border border-gray-300 rounded-md shadow-sm bg-white text-xs font-medium text-gray-500 hover:bg-gray-50"
               >
-                Admin Login
+                Admin
               </button>
               <button
                 type="button"
                 onClick={() => fillDemoCredentials('staff')}
-                className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                className="w-full inline-flex justify-center py-2 px-3 border border-gray-300 rounded-md shadow-sm bg-white text-xs font-medium text-gray-500 hover:bg-gray-50"
               >
-                Staff Login
+                Staff
+              </button>
+              <button
+                type="button"
+                onClick={() => fillDemoCredentials('developer')}
+                className="w-full inline-flex justify-center py-2 px-3 border border-blue-300 rounded-md shadow-sm bg-blue-50 text-xs font-medium text-blue-600 hover:bg-blue-100"
+              >
+                Developer
               </button>
             </div>
           </div>
@@ -157,6 +167,7 @@ export default function LoginPage() {
           <div className="text-xs text-gray-500 space-y-1">
             <p><strong>Admin:</strong> admin@offlicense.com / admin123</p>
             <p><strong>Staff:</strong> staff1@offlicense.com / staff123</p>
+            <p><strong>Developer:</strong> developer@admin.com / Dev@123456</p>
           </div>
         </div>
       </div>

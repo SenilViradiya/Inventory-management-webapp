@@ -8,6 +8,7 @@ const { authenticateToken, requireRole } = require('../middleware/auth');
 const { uploadSingleToAzure, deleteFromAzure } = require('../middleware/upload');
 const multer = require('multer');
 const path = require('path');
+// const openfoodfacts = require('@openfoodfacts/openfoodfacts-nodejs'); // Temporarily disabled due to ES module issues
 
 // Legacy multer configuration for fallback
 const storage = multer.diskStorage({
@@ -151,6 +152,240 @@ router.get('/qr/:qrCode', authenticateToken, async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: 'Error fetching product', error: error.message });
   }
+});
+
+// POST /api/products/scan - Enhanced QR code scanning endpoint for mobile integration
+router.post('/scan', authenticateToken, [
+  body('qrCode').trim().notEmpty().withMessage('QR code is required')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { qrCode } = req.body;
+    
+    // Find product by QR code with additional details
+    const product = await Product.findOne({ qrCode })
+      .populate('createdBy', 'username fullName')
+      .populate('categoryId', 'name description');
+    
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found with this QR code',
+        qrCode
+      });
+    }
+
+    // Calculate stock status
+    const stockStatus = {
+      isLowStock: product.stock.total <= product.lowStockThreshold,
+      isOutOfStock: product.stock.total === 0,
+      hasGodownStock: product.stock.godown > 0,
+      hasStoreStock: product.stock.store > 0
+    };
+
+    // Calculate days until expiration
+    const daysUntilExpiration = product.expirationDate 
+      ? Math.ceil((new Date(product.expirationDate) - new Date()) / (1000 * 60 * 60 * 24))
+      : null;
+
+    // Enhanced response for mobile apps
+    const response = {
+      success: true,
+      message: 'Product found successfully',
+      data: {
+        // Basic product info
+        id: product._id,
+        name: product.name,
+        description: product.description,
+        price: product.price,
+        qrCode: product.qrCode,
+        imageUrl: product.imageUrl,
+        
+        // Stock information
+        stock: {
+          godown: product.stock.godown,
+          store: product.stock.store,
+          total: product.stock.total,
+          reserved: product.stock.reserved,
+          lowStockThreshold: product.lowStockThreshold
+        },
+        
+        // Stock status indicators
+        stockStatus,
+        
+        // Category information
+        category: {
+          id: product.categoryId?._id,
+          name: product.categoryName,
+          details: product.categoryId
+        },
+        
+        // Expiration information
+        expiration: {
+          date: product.expirationDate,
+          daysUntilExpiration,
+          isExpired: daysUntilExpiration !== null && daysUntilExpiration <= 0,
+          isExpiringSoon: daysUntilExpiration !== null && daysUntilExpiration <= 7 && daysUntilExpiration > 0
+        },
+        
+        // Created by information
+        createdBy: product.createdBy,
+        
+        // Timestamps
+        createdAt: product.createdAt,
+        updatedAt: product.updatedAt
+      },
+      
+      // Quick actions available for this product
+      availableActions: {
+        canMoveToStore: product.stock.godown > 0,
+        canMoveToGodown: product.stock.store > 0,
+        canProcessSale: product.stock.store > 0,
+        canAddStock: true,
+        needsRestocking: stockStatus.isLowStock || stockStatus.isOutOfStock
+      },
+      
+      // Scan metadata
+      scanInfo: {
+        scannedAt: new Date().toISOString(),
+        scannedBy: req.user.id,
+        scannedQrCode: qrCode
+      }
+    };
+
+    res.status(200).json(response);
+
+  } catch (error) {
+    console.error('QR scan error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error scanning QR code',
+      error: error.message
+    });
+  }
+});
+
+// GET /api/products/scan/:qrCode - Alternative GET endpoint for QR scanning (for URL-based scanning)
+router.get('/scan/:qrCode', authenticateToken, async (req, res) => {
+  try {
+    const qrCode = req.params.qrCode;
+    
+    // Reuse the same logic as POST /scan
+    const product = await Product.findOne({ qrCode })
+      .populate('createdBy', 'username fullName')
+      .populate('categoryId', 'name description');
+    
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found with this QR code',
+        qrCode
+      });
+    }
+
+    // Calculate stock status
+    const stockStatus = {
+      isLowStock: product.stock.total <= product.lowStockThreshold,
+      isOutOfStock: product.stock.total === 0,
+      hasGodownStock: product.stock.godown > 0,
+      hasStoreStock: product.stock.store > 0
+    };
+
+    // Calculate days until expiration
+    const daysUntilExpiration = product.expirationDate 
+      ? Math.ceil((new Date(product.expirationDate) - new Date()) / (1000 * 60 * 60 * 24))
+      : null;
+
+    // Enhanced response
+    const response = {
+      success: true,
+      message: 'Product found successfully',
+      data: {
+        id: product._id,
+        name: product.name,
+        description: product.description,
+        price: product.price,
+        qrCode: product.qrCode,
+        imageUrl: product.imageUrl,
+        stock: {
+          godown: product.stock.godown,
+          store: product.stock.store,
+          total: product.stock.total,
+          reserved: product.stock.reserved,
+          lowStockThreshold: product.lowStockThreshold
+        },
+        stockStatus,
+        category: {
+          id: product.categoryId?._id,
+          name: product.categoryName,
+          details: product.categoryId
+        },
+        expiration: {
+          date: product.expirationDate,
+          daysUntilExpiration,
+          isExpired: daysUntilExpiration !== null && daysUntilExpiration <= 0,
+          isExpiringSoon: daysUntilExpiration !== null && daysUntilExpiration <= 7 && daysUntilExpiration > 0
+        },
+        createdBy: product.createdBy,
+        createdAt: product.createdAt,
+        updatedAt: product.updatedAt
+      },
+      availableActions: {
+        canMoveToStore: product.stock.godown > 0,
+        canMoveToGodown: product.stock.store > 0,
+        canProcessSale: product.stock.store > 0,
+        canAddStock: true,
+        needsRestocking: stockStatus.isLowStock || stockStatus.isOutOfStock
+      },
+      scanInfo: {
+        scannedAt: new Date().toISOString(),
+        scannedBy: req.user.id,
+        scannedQrCode: qrCode
+      }
+    };
+
+    res.status(200).json(response);
+
+  } catch (error) {
+    console.error('QR scan error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error scanning QR code',
+      error: error.message
+    });
+  }
+});
+
+// POST /api/products/scan-openfoodfacts - Scan product using OpenFoodFacts database
+// Temporarily disabled due to ES module compatibility issues
+router.post('/scan-openfoodfacts', authenticateToken, [
+  body('barcode').trim().notEmpty().withMessage('Barcode is required')
+], async (req, res) => {
+  return res.status(503).json({
+    success: false,
+    message: 'OpenFoodFacts integration temporarily unavailable',
+    error: 'Service temporarily disabled due to library compatibility issues'
+  });
+});
+
+// POST /api/products/add-from-openfoodfacts - Add product to inventory from OpenFoodFacts data
+// Temporarily disabled due to ES module compatibility issues
+router.post('/add-from-openfoodfacts', authenticateToken, requireRole('admin'), [
+  body('barcode').trim().notEmpty().withMessage('Barcode is required')
+], async (req, res) => {
+  return res.status(503).json({
+    success: false,
+    message: 'OpenFoodFacts integration temporarily unavailable',
+    error: 'Service temporarily disabled due to library compatibility issues'
+  });
 });
 
 // POST /api/products - Create new product (Admin only) - Updated for new stock structure

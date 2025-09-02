@@ -6,6 +6,12 @@ const productSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  brand: {
+    type: String,
+    required: false,
+    trim: true,
+    default: ''
+  },
   imageUrl: {
     type: String, // URL or file path
     default: ''

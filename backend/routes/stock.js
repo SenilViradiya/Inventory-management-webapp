@@ -365,6 +365,404 @@ router.post('/add-godown', authenticateToken, async (req, res) => {
   }
 });
 
+// @desc    Update godown stock for specific product
+// @route   POST /api/stock/godown/:productId/update
+// @access  Private
+router.post('/godown/:productId/update', authenticateToken, [
+  body('quantity').optional().isInt({ min: 0 }).withMessage('Quantity must be a non-negative integer'),
+  body('quantityChange').optional().isInt().withMessage('Quantity change must be an integer'),
+  body('reason').optional().isString().withMessage('Reason must be a string'),
+  body('notes').optional().isString().withMessage('Notes must be a string'),
+  body('qrCode').optional().isString().withMessage('QR code must be a string')
+], async (req, res) => {
+  console.log('🔄 POST /api/stock/godown/:productId/update - Update godown stock request:');
+  console.log('👤 User ID:', req.user?.id);
+  console.log('🆔 Product ID:', req.params.productId);
+  console.log('📄 Request Body:', JSON.stringify(req.body, null, 2));
+
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      console.log('❌ Validation errors:', errors.array());
+      return res.status(400).json({
+        success: false,
+        message: 'Validation errors',
+        errors: errors.array()
+      });
+    }
+
+    const { quantity, quantityChange, reason = 'Godown stock update', notes, qrCode } = req.body;
+    const productId = req.params.productId;
+
+    // Validate that either quantity or quantityChange is provided
+    if (quantity === undefined && quantityChange === undefined) {
+      console.log('❌ Neither quantity nor quantityChange provided');
+      return res.status(400).json({
+        success: false,
+        message: 'Either quantity (absolute) or quantityChange (relative) must be provided'
+      });
+    }
+
+    // Find the product by ID or QR code if provided
+    let product;
+    if (qrCode) {
+      product = await Product.findOne({ qrCode });
+      if (!product) {
+        console.log('❌ Product not found for QR code:', qrCode);
+        return res.status(404).json({
+          success: false,
+          message: 'Product not found with the provided QR code'
+        });
+      }
+    } else {
+      product = await Product.findById(productId);
+      if (!product) {
+        console.log('❌ Product not found for ID:', productId);
+        return res.status(404).json({
+          success: false,
+          message: 'Product not found'
+        });
+      }
+    }
+
+    console.log('✅ Product found:', {
+      id: product._id,
+      name: product.name,
+      currentGodownStock: product.stock?.godown || 0
+    });
+
+    // Calculate the new godown stock
+    const currentGodownStock = product.stock?.godown || 0;
+    let newGodownStock;
+    let difference;
+    let movementType;
+
+    if (quantity !== undefined) {
+      // Absolute quantity update
+      newGodownStock = parseInt(quantity);
+      difference = newGodownStock - currentGodownStock;
+      movementType = difference >= 0 ? 'godown_in' : 'godown_out';
+      console.log('📊 Absolute quantity update:', {
+        currentGodownStock,
+        newGodownStock,
+        difference
+      });
+    } else {
+      // Relative quantity change
+      const change = parseInt(quantityChange);
+      newGodownStock = currentGodownStock + change;
+      difference = change;
+      movementType = change >= 0 ? 'godown_in' : 'godown_out';
+      
+      // Prevent negative stock
+      if (newGodownStock < 0) {
+        console.log('❌ Insufficient stock for quantity change:', {
+          currentGodownStock,
+          requestedChange: change,
+          resultingStock: newGodownStock
+        });
+        return res.status(400).json({
+          success: false,
+          message: 'Insufficient stock for this operation',
+          data: {
+            currentGodownStock,
+            requestedChange: change,
+            availableStock: currentGodownStock
+          }
+        });
+      }
+      
+      console.log('📊 Relative quantity change:', {
+        currentGodownStock,
+        quantityChange: change,
+        newGodownStock,
+        difference
+      });
+    }
+
+    // Update only the godown stock
+    const updatedProduct = await Product.findByIdAndUpdate(
+      product._id,
+      {
+        $set: {
+          'stock.godown': newGodownStock,
+          'stock.total': newGodownStock + (product.stock?.store || 0)
+        }
+      },
+      { new: true, runValidators: true }
+    );
+
+    console.log('✅ Product godown stock updated:', {
+      id: updatedProduct._id,
+      name: updatedProduct.name,
+      newStock: updatedProduct.stock
+    });
+
+    // Create stock movement record with correct field names
+    const stockMovement = new StockMovement({
+      productId: product._id,
+      movementType: movementType,
+      fromLocation: movementType === 'godown_in' ? 'external' : 'godown',
+      toLocation: movementType === 'godown_in' ? 'godown' : 'external',
+      quantity: Math.abs(difference),
+      performedBy: req.user.id,
+      reason,
+      notes: notes || '',
+      previousStock: {
+        godown: currentGodownStock,
+        store: product.stock?.store || 0,
+        total: (product.stock?.godown || 0) + (product.stock?.store || 0)
+      },
+      newStock: {
+        godown: newGodownStock,
+        store: product.stock?.store || 0,
+        total: newGodownStock + (product.stock?.store || 0)
+      }
+    });
+
+    await stockMovement.save();
+    console.log('📝 Stock movement record created:', stockMovement._id);
+
+    // Create activity log
+    await ActivityLog.create({
+      userId: req.user.id,
+      action: 'STOCK_MOVEMENT',
+      productId: product._id,
+      change: difference,
+      previousValue: currentGodownStock,
+      newValue: newGodownStock,
+      details: `Updated godown stock for ${product.name} from ${currentGodownStock} to ${newGodownStock} (${difference >= 0 ? '+' : ''}${difference})`
+    });
+
+    console.log('📄 Activity log created for godown stock update');
+
+    res.status(200).json({
+      success: true,
+      message: `Successfully updated godown stock to ${newGodownStock} units`,
+      data: {
+        product: {
+          id: updatedProduct._id,
+          name: updatedProduct.name,
+          stock: updatedProduct.stock
+        },
+        movement: {
+          id: stockMovement._id,
+          type: stockMovement.movementType,
+          quantity: stockMovement.quantity,
+          difference
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Update godown stock error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update godown stock',
+      details: error.message
+    });
+  }
+});
+
+// @desc    Update store stock for specific product
+// @route   POST /api/stock/store/:productId/update
+// @access  Private
+router.post('/store/:productId/update', authenticateToken, [
+  body('quantity').optional().isInt({ min: 0 }).withMessage('Quantity must be a non-negative integer'),
+  body('quantityChange').optional().isInt().withMessage('Quantity change must be an integer'),
+  body('reason').optional().isString().withMessage('Reason must be a string'),
+  body('notes').optional().isString().withMessage('Notes must be a string'),
+  body('qrCode').optional().isString().withMessage('QR code must be a string')
+], async (req, res) => {
+  console.log('🔄 POST /api/stock/store/:productId/update - Update store stock request:');
+  console.log('👤 User ID:', req.user?.id);
+  console.log('🆔 Product ID:', req.params.productId);
+  console.log('📄 Request Body:', JSON.stringify(req.body, null, 2));
+
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      console.log('❌ Validation errors:', errors.array());
+      return res.status(400).json({
+        success: false,
+        message: 'Validation errors',
+        errors: errors.array()
+      });
+    }
+
+    const { quantity, quantityChange, reason = 'Store stock update', notes, qrCode } = req.body;
+    const productId = req.params.productId;
+
+    // Validate that either quantity or quantityChange is provided
+    if (quantity === undefined && quantityChange === undefined) {
+      console.log('❌ Neither quantity nor quantityChange provided');
+      return res.status(400).json({
+        success: false,
+        message: 'Either quantity (absolute) or quantityChange (relative) must be provided'
+      });
+    }
+
+    // Find the product by ID or QR code if provided
+    let product;
+    if (qrCode) {
+      product = await Product.findOne({ qrCode });
+      if (!product) {
+        console.log('❌ Product not found for QR code:', qrCode);
+        return res.status(404).json({
+          success: false,
+          message: 'Product not found with the provided QR code'
+        });
+      }
+    } else {
+      product = await Product.findById(productId);
+      if (!product) {
+        console.log('❌ Product not found for ID:', productId);
+        return res.status(404).json({
+          success: false,
+          message: 'Product not found'
+        });
+      }
+    }
+
+    console.log('✅ Product found:', {
+      id: product._id,
+      name: product.name,
+      currentStoreStock: product.stock?.store || 0
+    });
+
+    // Calculate the new store stock
+    const currentStoreStock = product.stock?.store || 0;
+    let newStoreStock;
+    let difference;
+    let movementType;
+
+    if (quantity !== undefined) {
+      // Absolute quantity update
+      newStoreStock = parseInt(quantity);
+      difference = newStoreStock - currentStoreStock;
+      movementType = difference >= 0 ? 'store_in' : 'store_out';
+      console.log('📊 Absolute quantity update:', {
+        currentStoreStock,
+        newStoreStock,
+        difference
+      });
+    } else {
+      // Relative quantity change
+      const change = parseInt(quantityChange);
+      newStoreStock = currentStoreStock + change;
+      difference = change;
+      movementType = change >= 0 ? 'store_in' : 'store_out';
+      
+      // Prevent negative stock
+      if (newStoreStock < 0) {
+        console.log('❌ Insufficient stock for quantity change:', {
+          currentStoreStock,
+          requestedChange: change,
+          resultingStock: newStoreStock
+        });
+        return res.status(400).json({
+          success: false,
+          message: 'Insufficient stock for this operation',
+          data: {
+            currentStoreStock,
+            requestedChange: change,
+            availableStock: currentStoreStock
+          }
+        });
+      }
+      
+      console.log('📊 Relative quantity change:', {
+        currentStoreStock,
+        quantityChange: change,
+        newStoreStock,
+        difference
+      });
+    }
+
+    // Update only the store stock
+    const updatedProduct = await Product.findByIdAndUpdate(
+      product._id,
+      {
+        $set: {
+          'stock.store': newStoreStock,
+          'stock.total': (product.stock?.godown || 0) + newStoreStock
+        }
+      },
+      { new: true, runValidators: true }
+    );
+
+    console.log('✅ Product store stock updated:', {
+      id: updatedProduct._id,
+      name: updatedProduct.name,
+      newStock: updatedProduct.stock
+    });
+
+    // Create stock movement record with correct field names
+    const stockMovement = new StockMovement({
+      productId: product._id,
+      movementType: movementType,
+      fromLocation: movementType === 'store_in' ? 'external' : 'store',
+      toLocation: movementType === 'store_in' ? 'store' : 'external',
+      quantity: Math.abs(difference),
+      performedBy: req.user.id,
+      reason,
+      notes: notes || '',
+      previousStock: {
+        godown: product.stock?.godown || 0,
+        store: currentStoreStock,
+        total: (product.stock?.godown || 0) + (product.stock?.store || 0)
+      },
+      newStock: {
+        godown: product.stock?.godown || 0,
+        store: newStoreStock,
+        total: (product.stock?.godown || 0) + newStoreStock
+      }
+    });
+
+    await stockMovement.save();
+    console.log('📝 Stock movement record created:', stockMovement._id);
+
+    // Create activity log
+    await ActivityLog.create({
+      userId: req.user.id,
+      action: 'STOCK_MOVEMENT',
+      productId: product._id,
+      change: difference,
+      previousValue: currentStoreStock,
+      newValue: newStoreStock,
+      details: `Updated store stock for ${product.name} from ${currentStoreStock} to ${newStoreStock} (${difference >= 0 ? '+' : ''}${difference})`
+    });
+
+    console.log('📄 Activity log created for store stock update');
+
+    res.status(200).json({
+      success: true,
+      message: `Successfully updated store stock to ${newStoreStock} units`,
+      data: {
+        product: {
+          id: updatedProduct._id,
+          name: updatedProduct.name,
+          stock: updatedProduct.stock
+        },
+        movement: {
+          id: stockMovement._id,
+          type: stockMovement.movementType,
+          quantity: stockMovement.quantity,
+          difference
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Update store stock error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update store stock',
+      details: error.message
+    });
+  }
+});
+
 // @desc    Process sale from store
 // @route   POST /api/stock/process-sale
 // @access  Private

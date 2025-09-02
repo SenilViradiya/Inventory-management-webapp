@@ -180,6 +180,14 @@ router.post('/', authenticateToken, requireRole('admin'), (req, res, next) => {
       createdBy: req.user.id
     };
 
+    // Normalize category: store both categoryId and categoryName for fast reads/sorting
+    if (category) {
+      productData.categoryId = category._id;
+      productData.categoryName = category.name;
+    }
+    // Remove legacy category field if present
+    if (productData.category) delete productData.category;
+
     // Handle stock structure - support both new and legacy formats
     if (req.body.stock) {
       // New stock structure provided
@@ -294,6 +302,18 @@ router.put('/:id', authenticateToken, requireRole('admin'), (req, res, next) => 
       ...req.body,
       updatedBy: req.user.id
     };
+
+    // If category is provided on update, normalize it to categoryId + categoryName
+    if (req.body.category) {
+      const newCat = await Category.findById(req.body.category);
+      if (!newCat) {
+        return res.status(400).json({ message: 'Invalid category ID provided' });
+      }
+      updateData.categoryId = newCat._id;
+      updateData.categoryName = newCat.name;
+      // Remove legacy category key if present
+      if (updateData.category) delete updateData.category;
+    }
 
     // Add image URL if uploaded to Azure or local path as fallback
     if (req.file) {

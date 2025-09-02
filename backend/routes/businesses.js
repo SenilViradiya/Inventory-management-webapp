@@ -11,14 +11,14 @@ const isDeveloper = async (req, res, next) => {
     if (!user) {
       return res.status(403).json({ message: 'User not found.' });
     }
-    
+
     // Allow superadmin, developer, and admin users
     const allowedRoles = ['superadmin', 'developer', 'admin'];
-    const hasPermission = allowedRoles.includes(user.role.name) || 
-                         (user.permissions && user.permissions.includes('system:admin'));
-    
+    const hasPermission = allowedRoles.includes(user.role.name) ||
+      (user.permissions && user.permissions.includes('system:admin'));
+
     if (!hasPermission) {
-      return res.status(403).json({ 
+      return res.status(403).json({
         message: 'Access denied. Developer/Admin privileges required.',
         userRole: user.role.name,
         userPermissions: user.permissions || []
@@ -35,7 +35,8 @@ const isDeveloper = async (req, res, next) => {
 router.get('/', authenticateToken, isDeveloper, async (req, res) => {
   try {
     const businesses = await Business.find()
-      .populate('createdBy', 'username email')
+      .populate('createdBy', 'username email firstName lastName')
+      .populate('users', 'username email firstName lastName role isActive')
       .sort({ createdAt: -1 });
 
     const businessStats = {
@@ -50,6 +51,7 @@ router.get('/', authenticateToken, isDeveloper, async (req, res) => {
       stats: businessStats
     });
   } catch (error) {
+    console.error('Error fetching businesses:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
@@ -77,48 +79,89 @@ router.post('/', authenticateToken, isDeveloper, async (req, res) => {
       phone: req.body.ownerPhone
     };
 
+    // Validate required fields
+    if (!name || !ownerData.name || !ownerData.email) {
+      return res.status(400).json({
+        message: 'Business name, owner name, and owner email are required'
+      });
+    }
+
     // Check if business with this email already exists
     const existingBusiness = await Business.findOne({ 'owner.email': ownerData.email });
     if (existingBusiness) {
       return res.status(400).json({ message: 'Business with this email already exists' });
     }
 
+    // Set default subscription end date (30 days from now)
+    const subscriptionEndDate = subscription?.endDate ?
+      new Date(subscription.endDate) :
+      new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
     const business = new Business({
       name,
       owner: {
         name: ownerData.name,
         email: ownerData.email,
-        phone: ownerData.phone
+        phone: ownerData.phone || ''
       },
       address: address || {},
       organizationType: organizationType || 'client-organization',
       description: description || '',
       website: website || '',
       industry: industry || '',
-      availableRoles: availableRoles || (organizationType === 'my-organization' 
+      availableRoles: availableRoles || (organizationType === 'my-organization'
         ? ['developer', 'tester', 'marketer', 'designer', 'manager', 'admin', 'superadmin']
         : ['staff', 'admin']),
       subscription: {
         plan: subscription?.plan || 'trial',
         startDate: subscription?.startDate || new Date(),
-        endDate: subscription?.endDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        isActive: true
+        endDate: subscriptionEndDate,
+        isActive: true,
+        trialExtensions: 0
       },
       settings: {
         maxUsers: settings?.maxUsers || 5,
         maxProducts: settings?.maxProducts || 100,
         features: settings?.features || ['inventory_management', 'qr_scanning']
       },
+      status: 'active',
       createdBy: req.user.id
     });
 
     await business.save();
 
+    const populatedBusiness = await Business.findById(business._id)
+      .populate('createdBy', 'username email firstName lastName')
+      .populate('users', 'username email firstName lastName role isActive');
+
     res.status(201).json({
       message: 'Business created successfully',
+      business: populatedBusiness
+    });
+  } catch (error) {
+    console.error('Error creating business:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Get single business by ID
+router.get('/:id', authenticateToken, isDeveloper, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const business = await Business.findById(id)
+      .populate('createdBy', 'username email firstName lastName')
+      .populate('users', 'username email firstName lastName role organizationRole isActive lastLogin');
+
+    if (!business) {
+      return res.status(404).json({ message: 'Business not found' });
+    }
+
+    res.json({
       business
     });
   } catch (error) {
+    console.error('Error fetching business:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
@@ -129,11 +172,21 @@ router.put('/:id', authenticateToken, isDeveloper, async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
 
+    // Remove fields that shouldn't be updated directly
+    delete updates._id;
+    delete updates.createdAt;
+    delete updates.createdBy;
+
+    // Update timestamp
+    updates.updatedAt = new Date();
+
     const business = await Business.findByIdAndUpdate(
       id,
       { $set: updates },
       { new: true, runValidators: true }
-    );
+    )
+      .populate('createdBy', 'username email firstName lastName')
+      .populate('users', 'username email firstName lastName role organizationRole isActive');
 
     if (!business) {
       return res.status(404).json({ message: 'Business not found' });
@@ -144,6 +197,7 @@ router.put('/:id', authenticateToken, isDeveloper, async (req, res) => {
       business
     });
   } catch (error) {
+    console.error('Error updating business:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
@@ -169,7 +223,7 @@ router.post('/:id/extend-trial', authenticateToken, isDeveloper, async (req, res
 
     business.subscription.endDate = newEndDate;
     business.subscription.trialExtensions += 1;
-    
+
     await business.save();
 
     res.json({
@@ -267,29 +321,29 @@ router.post('/:id/users', authenticateToken, isDeveloper, async (req, res) => {
 
     // Validate role against available roles for this organization
     if (!business.availableRoles.includes(organizationRole)) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         message: `Role '${organizationRole}' not available for this organization type`,
         availableRoles: business.availableRoles
       });
     }
 
     // Check if user already exists
-    const existingUser = await User.findOne({ 
-      $or: [{ email }, { username }] 
+    const existingUser = await User.findOne({
+      $or: [{ email }, { username }]
     });
-    
+
     if (existingUser) {
-      return res.status(400).json({ 
-        message: 'User with this email or username already exists' 
+      return res.status(400).json({
+        message: 'User with this email or username already exists'
       });
     }
 
     // Create the user
     const bcrypt = require('bcryptjs');
     const Role = require('../models/Role');
-    
+
     const hashedPassword = await bcrypt.hash(password, 10);
-    
+
     // Find appropriate system role
     let systemRole = await Role.findOne({ name: 'staff' }); // Default
     if (organizationRole === 'admin' || organizationRole === 'manager') {
@@ -338,7 +392,7 @@ router.post('/:id/users', authenticateToken, isDeveloper, async (req, res) => {
 router.get('/:id/users', authenticateToken, isDeveloper, async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const business = await Business.findById(id);
     if (!business) {
       return res.status(404).json({ message: 'Organization not found' });

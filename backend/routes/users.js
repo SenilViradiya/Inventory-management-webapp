@@ -459,8 +459,18 @@ router.put('/change-password', authenticateToken, [
   }
 });
 
-// GET /api/users - Get all users (Admin only)
-router.get('/', authenticateToken, requireRole('admin'), async (req, res) => {
+// GET /api/users - Get all users (Admin, SuperAdmin, or Developer only)
+router.get('/', authenticateToken, (req, res, next) => {
+  // Allow admin, superadmin, or developer roles
+  if (!req.user || !req.user.role || !['admin', 'superadmin', 'developer'].includes(req.user.role.name)) {
+    return res.status(403).json({
+      message: 'Access denied. Admin, SuperAdmin, or Developer role required.',
+      userRole: req.user?.role?.name || 'no role',
+      requiredRoles: ['admin', 'superadmin', 'developer']
+    });
+  }
+  next();
+}, async (req, res) => {
   try {
     const { page = 1, limit = 20, role, search, isActive } = req.query;
 

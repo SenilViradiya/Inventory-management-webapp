@@ -1,15 +1,17 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { 
-  Users, 
-  Building2, 
-  BarChart3, 
-  Shield, 
-  Plus, 
-  Search, 
-  Edit, 
-  Trash2, 
+import Cookies from 'js-cookie';
+import toast from 'react-hot-toast';
+import {
+  Users,
+  Building2,
+  BarChart3,
+  Shield,
+  Plus,
+  Search,
+  Edit,
+  Trash2,
   Eye,
   EyeOff,
   CheckCircle,
@@ -144,7 +146,11 @@ export default function DeveloperDashboard() {
   const [selectedOrganization, setSelectedOrganization] = useState<Organization | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddUser, setShowAddUser] = useState(false);
+  const [showEditUser, setShowEditUser] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
   const [showAddOrganization, setShowAddOrganization] = useState(false);
+  const [showEditOrganization, setShowEditOrganization] = useState(false);
+  const [editingOrganization, setEditingOrganization] = useState<Organization | null>(null);
   const [formData, setFormData] = useState({
     username: '',
     email: '',
@@ -190,26 +196,31 @@ export default function DeveloperDashboard() {
 
   const fetchUsers = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = Cookies.get('authToken');
       console.log('Fetching users with token:', token ? 'Token exists' : 'No token');
-      
-      const response = await fetch('/api/users', {
+
+      const response = await fetch('http://localhost:5001/api/users', {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
-      
+
       console.log('Users response status:', response.status);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       const data = await response.json();
       console.log('Users data:', data);
-      
+
       setUsers(data.users || []);
-      
+
       // Update user stats
       const totalUsers = data.users?.length || 0;
       const activeUsers = data.users?.filter((user: User) => user.isActive).length || 0;
-      
+
       setStats(prev => ({
         ...prev,
         totalUsers,
@@ -222,23 +233,28 @@ export default function DeveloperDashboard() {
 
   const fetchOrganizations = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = Cookies.get('authToken');
       console.log('Fetching organizations with token:', token ? 'Token exists' : 'No token');
-      
-      const response = await fetch('/api/businesses', {
+
+      const response = await fetch('http://localhost:5001/api/businesses', {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
-      
+
       console.log('Organizations response status:', response.status);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       const data = await response.json();
       console.log('Organizations data:', data);
-      
+
       setOrganizations(data.businesses || []);
       setBusinessStats(data.stats || { total: 0, active: 0, trial: 0, expired: 0 });
-      
+
       // Update organization stats
       setStats(prev => ({
         ...prev,
@@ -252,15 +268,18 @@ export default function DeveloperDashboard() {
 
   const fetchSystemAnalytics = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('/api/simple-analytics/dashboard', {
+      const token = Cookies.get('authToken');
+      const response = await fetch('http://localhost:5001/api/simple-analytics/dashboard', {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
-      const data = await response.json();
-      setSystemAnalytics(data);
+
+      if (response.ok) {
+        const data = await response.json();
+        setSystemAnalytics(data);
+      }
     } catch (error) {
       console.error('Error fetching system analytics:', error);
     }
@@ -269,8 +288,8 @@ export default function DeveloperDashboard() {
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('/api/users', {
+      const token = Cookies.get('authToken');
+      const response = await fetch('http://localhost:5001/api/users', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -280,10 +299,12 @@ export default function DeveloperDashboard() {
           username: formData.username,
           email: formData.email,
           password: formData.password,
-          fullName: formData.fullName,
+          firstName: formData.fullName.split(' ')[0] || formData.username,
+          lastName: formData.fullName.split(' ').slice(1).join(' ') || '',
           phone: formData.phone,
           role: formData.role,
-          businessId: formData.businessId || null
+          organization: formData.businessId || null,
+          organizationRole: formData.role
         })
       });
 
@@ -299,22 +320,22 @@ export default function DeveloperDashboard() {
           businessId: ''
         });
         fetchUsers();
-        alert('User created successfully!');
+        toast.success('User created successfully!');
       } else {
         const errorData = await response.json();
-        alert('Error creating user: ' + (errorData.message || 'Unknown error'));
+        toast.error('Error creating user: ' + (errorData.message || 'Unknown error'));
       }
     } catch (error) {
       console.error('Error creating user:', error);
-      alert('Error creating user: ' + error.message);
+      toast.error('Error creating user: ' + error.message);
     }
   };
 
   const handleCreateOrganization = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('/api/businesses', {
+      const token = Cookies.get('authToken');
+      const response = await fetch('http://localhost:5001/api/businesses', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -358,21 +379,21 @@ export default function DeveloperDashboard() {
           maxProducts: 100
         });
         fetchOrganizations();
-        alert('Organization created successfully!');
+        toast.success('Organization created successfully!');
       } else {
         const errorData = await response.json();
-        alert('Error creating organization: ' + (errorData.message || 'Unknown error'));
+        toast.error('Error creating organization: ' + (errorData.message || 'Unknown error'));
       }
     } catch (error) {
       console.error('Error creating organization:', error);
-      alert('Error creating organization: ' + error.message);
+      toast.error('Error creating organization: ' + error.message);
     }
   };
 
   const handleToggleUserStatus = async (userId: string, currentStatus: boolean) => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`/api/users/${userId}/toggle-status`, {
+      const token = Cookies.get('authToken');
+      const response = await fetch(`http://localhost:5001/api/users/${userId}/toggle-status`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -383,9 +404,14 @@ export default function DeveloperDashboard() {
 
       if (response.ok) {
         fetchUsers();
+        toast.success(`User ${!currentStatus ? 'activated' : 'deactivated'} successfully!`);
+      } else {
+        const errorData = await response.json();
+        toast.error('Error updating user status: ' + (errorData.message || 'Unknown error'));
       }
     } catch (error) {
       console.error('Error toggling user status:', error);
+      toast.error('Error updating user status: ' + error.message);
     }
   };
 
@@ -395,8 +421,8 @@ export default function DeveloperDashboard() {
     }
 
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`/api/businesses/${organizationId}`, {
+      const token = Cookies.get('authToken');
+      const response = await fetch(`http://localhost:5001/api/businesses/${organizationId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -406,41 +432,215 @@ export default function DeveloperDashboard() {
 
       if (response.ok) {
         fetchOrganizations();
-        alert('Organization deleted successfully!');
+        toast.success('Organization deleted successfully!');
       } else {
         const errorData = await response.json();
-        alert('Error deleting organization: ' + (errorData.message || 'Unknown error'));
+        toast.error('Error deleting organization: ' + (errorData.message || 'Unknown error'));
       }
     } catch (error) {
       console.error('Error deleting organization:', error);
-      alert('Error deleting organization: ' + error.message);
+      toast.error('Error deleting organization: ' + error.message);
     }
   };
 
-  const handleAssignUserToOrganization = async (userId: string, organizationId: string) => {
+  const handleEditOrganization = (organization: Organization) => {
+    setEditingOrganization(organization);
+    setOrganizationForm({
+      name: organization.name,
+      ownerName: organization.owner.name,
+      ownerEmail: organization.owner.email,
+      ownerPhone: organization.owner.phone || '',
+      organizationType: organization.organizationType,
+      description: organization.description || '',
+      website: organization.website || '',
+      industry: organization.industry || '',
+      subscriptionPlan: organization.subscription.plan,
+      maxUsers: organization.settings.maxUsers,
+      maxProducts: organization.settings.maxProducts
+    });
+    setShowEditOrganization(true);
+  };
+
+  const handleUpdateOrganization = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingOrganization) return;
+
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`/api/users/${userId}`, {
+      const token = Cookies.get('authToken');
+      const response = await fetch(`http://localhost:5001/api/businesses/${editingOrganization._id}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          businessId: organizationId
+          name: organizationForm.name,
+          owner: {
+            name: organizationForm.ownerName,
+            email: organizationForm.ownerEmail,
+            phone: organizationForm.ownerPhone
+          },
+          organizationType: organizationForm.organizationType,
+          description: organizationForm.description,
+          website: organizationForm.website,
+          industry: organizationForm.industry,
+          subscription: {
+            plan: organizationForm.subscriptionPlan
+          },
+          settings: {
+            maxUsers: organizationForm.maxUsers,
+            maxProducts: organizationForm.maxProducts,
+            features: ['inventory_management', 'qr_scanning']
+          }
         })
       });
 
       if (response.ok) {
-        fetchUsers();
-        alert('User assigned to organization successfully!');
+        setShowEditOrganization(false);
+        setEditingOrganization(null);
+        setOrganizationForm({
+          name: '',
+          ownerName: '',
+          ownerEmail: '',
+          ownerPhone: '',
+          organizationType: 'client-organization',
+          description: '',
+          website: '',
+          industry: '',
+          subscriptionPlan: 'trial',
+          maxUsers: 5,
+          maxProducts: 100
+        });
+        fetchOrganizations();
+        toast.success('Organization updated successfully!');
       } else {
         const errorData = await response.json();
-        alert('Error assigning user: ' + (errorData.message || 'Unknown error'));
+        toast.error('Error updating organization: ' + (errorData.message || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Error updating organization:', error);
+      toast.error('Error updating organization: ' + error.message);
+    }
+  };
+
+  const handleAssignUserToOrganization = async (userId: string, organizationId: string) => {
+    try {
+      const token = Cookies.get('authToken');
+      const response = await fetch(`http://localhost:5001/api/users/${userId}/assign-organization`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ organizationId })
+      });
+
+      if (response.ok) {
+        fetchUsers();
+        toast.success('User assigned to organization successfully!');
+      } else {
+        const errorData = await response.json();
+        toast.error('Error assigning user to organization: ' + (errorData.message || 'Unknown error'));
       }
     } catch (error) {
       console.error('Error assigning user to organization:', error);
-      alert('Error assigning user: ' + error.message);
+      toast.error('Error assigning user to organization: ' + error.message);
+    }
+  };
+
+  const handleEditUser = (user: User) => {
+    setEditingUser(user);
+    setFormData({
+      username: user.username,
+      email: user.email,
+      password: '', // Don't prefill password for security
+      fullName: user.fullName || '',
+      phone: '', // We'll need to add phone to User interface or get from API
+      role: user.role.name,
+      businessId: user.businessId || ''
+    });
+    setShowEditUser(true);
+  };
+
+  const handleUpdateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser) return;
+
+    try {
+      const token = Cookies.get('authToken');
+      const updateData: any = {
+        username: formData.username,
+        email: formData.email,
+        firstName: formData.fullName.split(' ')[0] || formData.username,
+        lastName: formData.fullName.split(' ').slice(1).join(' ') || '',
+        role: formData.role,
+        organization: formData.businessId || null,
+        organizationRole: formData.role
+      };
+
+      // Only include password if it's provided
+      if (formData.password.trim()) {
+        updateData.password = formData.password;
+      }
+
+      const response = await fetch(`http://localhost:5001/api/users/${editingUser._id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(updateData)
+      });
+
+      if (response.ok) {
+        setShowEditUser(false);
+        setEditingUser(null);
+        setFormData({
+          username: '',
+          email: '',
+          password: '',
+          fullName: '',
+          phone: '',
+          role: 'staff',
+          businessId: ''
+        });
+        fetchUsers();
+        toast.success('User updated successfully!');
+      } else {
+        const errorData = await response.json();
+        toast.error('Error updating user: ' + (errorData.message || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Error updating user:', error);
+      toast.error('Error updating user: ' + error.message);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string, username: string) => {
+    if (!window.confirm(`Are you sure you want to delete user "${username}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const token = Cookies.get('authToken');
+      const response = await fetch(`http://localhost:5001/api/users/${userId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        fetchUsers();
+        toast.success('User deleted successfully!');
+      } else {
+        const errorData = await response.json();
+        toast.error('Error deleting user: ' + (errorData.message || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      toast.error('Error deleting user: ' + error.message);
     }
   };
 
@@ -504,11 +704,10 @@ export default function DeveloperDashboard() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === tab.id
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
+                className={`flex items-center py-4 px-1 border-b-2 font-medium text-sm ${activeTab === tab.id
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
               >
                 <tab.icon className="h-5 w-5 mr-2" />
                 {tab.name}
@@ -675,6 +874,17 @@ export default function DeveloperDashboard() {
 
             {/* Users Table */}
             <div className="bg-white shadow rounded-lg overflow-hidden">
+              {/* Debug Information */}
+              <div className="px-6 py-4 bg-yellow-50 border-b border-yellow-200">
+                <div className="text-sm text-yellow-800">
+                  <p><strong>Debug Info:</strong></p>
+                  <p>Total users: {users.length}</p>
+                  <p>Filtered users: {filteredUsers.length}</p>
+                  <p>Search term: "{searchTerm}"</p>
+                  <p>Loading: {loading ? 'Yes' : 'No'}</p>
+                </div>
+              </div>
+
               <div className="min-w-full divide-y divide-gray-200">
                 <div className="bg-gray-50 px-6 py-3">
                   <div className="grid grid-cols-6 gap-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -687,86 +897,105 @@ export default function DeveloperDashboard() {
                   </div>
                 </div>
                 <div className="bg-white divide-y divide-gray-200">
-                  {filteredUsers.map((user) => (
-                    <div key={user._id} className="px-6 py-4">
-                      <div className="grid grid-cols-6 gap-4 items-center">
-                        <div className="flex items-center">
-                          <div className="h-10 w-10 rounded-full bg-gray-300 flex items-center justify-center">
-                            <span className="text-sm font-medium text-gray-700">
-                              {user.username.charAt(0).toUpperCase()}
-                            </span>
+                  {loading ? (
+                    <div className="px-6 py-8 text-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                      <p className="mt-2 text-sm text-gray-500">Loading users...</p>
+                    </div>
+                  ) : filteredUsers.length === 0 ? (
+                    <div className="px-6 py-8 text-center">
+                      <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                      <p className="text-lg font-medium text-gray-900">No users found</p>
+                      <p className="text-sm text-gray-500">
+                        {users.length === 0
+                          ? "No users exist in the system yet. Add some users to get started."
+                          : "No users match your search criteria. Try adjusting your search term."
+                        }
+                      </p>
+                    </div>
+                  ) : (
+                    filteredUsers.map((user) => (
+                      <div key={user._id} className="px-6 py-4">
+                        <div className="grid grid-cols-6 gap-4 items-center">
+                          <div className="flex items-center">
+                            <div className="h-10 w-10 rounded-full bg-gray-300 flex items-center justify-center">
+                              <span className="text-sm font-medium text-gray-700">
+                                {user.username.charAt(0).toUpperCase()}
+                              </span>
+                            </div>
+                            <div className="ml-4">
+                              <div className="text-sm font-medium text-gray-900">{user.fullName || user.username}</div>
+                              <div className="text-sm text-gray-500">{user.email}</div>
+                            </div>
                           </div>
-                          <div className="ml-4">
-                            <div className="text-sm font-medium text-gray-900">{user.fullName || user.username}</div>
-                            <div className="text-sm text-gray-500">{user.email}</div>
-                          </div>
-                        </div>
-                        <div>
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                            user.role.name === 'admin'
+                          <div>
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${user.role.name === 'admin'
                               ? 'bg-purple-100 text-purple-800'
                               : user.role.name === 'manager'
-                              ? 'bg-blue-100 text-blue-800'
-                              : 'bg-gray-100 text-gray-800'
-                          }`}>
-                            {user.role.name}
-                          </span>
-                        </div>
-                        <div className="text-sm text-gray-900">
-                          {user.businessName || 'No Organization'}
-                        </div>
-                        <div>
-                          {user.isActive ? (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                              <CheckCircle className="w-3 h-3 mr-1" />
-                              Active
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-gray-100 text-gray-800'
+                              }`}>
+                              {user.role.name}
                             </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                              <XCircle className="w-3 h-3 mr-1" />
-                              Inactive
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          {user.lastLogin ? formatDate(user.lastLogin) : 'Never'}
-                        </div>
-                        <div className="flex space-x-2">
-                          <button
-                            onClick={() => handleToggleUserStatus(user._id, user.isActive)}
-                            className="text-blue-600 hover:text-blue-900"
-                            title={user.isActive ? 'Deactivate User' : 'Activate User'}
-                          >
-                            {user.isActive ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                          </button>
-                          <button 
-                            className="text-green-600 hover:text-green-900"
-                            title="Edit User"
-                          >
-                            <Edit className="h-4 w-4" />
-                          </button>
-                          <button 
-                            className="text-purple-600 hover:text-purple-900"
-                            title="Assign to Organization"
-                            onClick={() => {
-                              const orgId = prompt('Enter Organization ID to assign user to:');
-                              if (orgId) {
-                                handleAssignUserToOrganization(user._id, orgId);
-                              }
-                            }}
-                          >
-                            <Building2 className="h-4 w-4" />
-                          </button>
-                          <button 
-                            className="text-red-600 hover:text-red-900"
-                            title="Delete User"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          </div>
+                          <div className="text-sm text-gray-900">
+                            {user.businessName || 'No Organization'}
+                          </div>
+                          <div>
+                            {user.isActive ? (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                <CheckCircle className="w-3 h-3 mr-1" />
+                                Active
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                <XCircle className="w-3 h-3 mr-1" />
+                                Inactive
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            {user.lastLogin ? formatDate(user.lastLogin) : 'Never'}
+                          </div>
+                          <div className="flex space-x-2">
+                            <button
+                              onClick={() => handleToggleUserStatus(user._id, user.isActive)}
+                              className="text-blue-600 hover:text-blue-900"
+                              title={user.isActive ? 'Deactivate User' : 'Activate User'}
+                            >
+                              {user.isActive ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </button>
+                            <button
+                              className="text-green-600 hover:text-green-900"
+                              title="Edit User"
+                              onClick={() => handleEditUser(user)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </button>
+                            <button
+                              className="text-purple-600 hover:text-purple-900"
+                              title="Assign to Organization"
+                              onClick={() => {
+                                const orgId = prompt('Enter Organization ID to assign user to:');
+                                if (orgId) {
+                                  handleAssignUserToOrganization(user._id, orgId);
+                                }
+                              }}
+                            >
+                              <Building2 className="h-4 w-4" />
+                            </button>
+                            <button
+                              className="text-red-600 hover:text-red-900"
+                              title="Delete User"
+                              onClick={() => handleDeleteUser(user._id, user.username)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </div>
             </div>
@@ -832,15 +1061,14 @@ export default function DeveloperDashboard() {
                         <h3 className="text-lg font-medium text-gray-900">{org.name}</h3>
                         <p className="text-sm text-gray-500">{org.organizationType}</p>
                       </div>
-                      <span className={`px-2 py-1 text-xs rounded-full ${
-                        org.subscription.isActive 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-red-100 text-red-800'
-                      }`}>
+                      <span className={`px-2 py-1 text-xs rounded-full ${org.subscription.isActive
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-red-100 text-red-800'
+                        }`}>
                         {org.subscription.plan}
                       </span>
                     </div>
-                    
+
                     <div className="space-y-2 mb-4">
                       <div className="flex items-center text-sm text-gray-600">
                         <Mail className="h-4 w-4 mr-2" />
@@ -870,15 +1098,24 @@ export default function DeveloperDashboard() {
                     </div>
 
                     <div className="flex justify-end space-x-2">
-                      <button className="text-blue-600 hover:text-blue-900">
+                      <button
+                        className="text-blue-600 hover:text-blue-900"
+                        title="View Organization"
+                        onClick={() => setSelectedOrganization(org)}
+                      >
                         <Eye className="h-4 w-4" />
                       </button>
-                      <button className="text-green-600 hover:text-green-900">
+                      <button
+                        className="text-green-600 hover:text-green-900"
+                        title="Edit Organization"
+                        onClick={() => handleEditOrganization(org)}
+                      >
                         <Edit className="h-4 w-4" />
                       </button>
-                      <button 
+                      <button
                         onClick={() => handleDeleteOrganization(org._id)}
                         className="text-red-600 hover:text-red-900"
+                        title="Delete Organization"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -992,68 +1229,79 @@ export default function DeveloperDashboard() {
 
       {/* Add User Modal */}
       {showAddUser && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-            <div className="mt-3">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Add New User</h3>
-              <form onSubmit={handleCreateUser} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Username</label>
-                  <input
-                    type="text"
-                    required
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                    value={formData.username}
-                    onChange={(e) => setFormData({...formData, username: e.target.value})}
-                  />
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
+          <div className="relative w-full max-w-4xl bg-white rounded-lg shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="p-8">
+              <h3 className="text-xl font-semibold text-gray-900 mb-8">Add New User</h3>
+              <form onSubmit={handleCreateUser} className="space-y-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Username</label>
+                    <input
+                      type="text"
+                      required
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={formData.username}
+                      onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                    <input
+                      type="text"
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={formData.fullName}
+                      onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                    <input
+                      type="email"
+                      required
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                    <input
+                      type="password"
+                      required
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={formData.password}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Role</label>
+                    <select
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={formData.role}
+                      onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                    >
+                      <option value="staff">Staff</option>
+                      <option value="manager">Manager</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                    <input
+                      type="tel"
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    />
+                  </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Full Name</label>
-                  <input
-                    type="text"
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                    value={formData.fullName}
-                    onChange={(e) => setFormData({...formData, fullName: e.target.value})}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Email</label>
-                  <input
-                    type="email"
-                    required
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                    value={formData.email}
-                    onChange={(e) => setFormData({...formData, email: e.target.value})}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Password</label>
-                  <input
-                    type="password"
-                    required
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                    value={formData.password}
-                    onChange={(e) => setFormData({...formData, password: e.target.value})}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Role</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Organization (Optional)</label>
                   <select
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                    value={formData.role}
-                    onChange={(e) => setFormData({...formData, role: e.target.value})}
-                  >
-                    <option value="staff">Staff</option>
-                    <option value="manager">Manager</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Organization (Optional)</label>
-                  <select
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                    className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     value={formData.businessId}
-                    onChange={(e) => setFormData({...formData, businessId: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, businessId: e.target.value })}
                   >
                     <option value="">No Organization</option>
                     {organizations.map((org) => (
@@ -1063,17 +1311,17 @@ export default function DeveloperDashboard() {
                     ))}
                   </select>
                 </div>
-                <div className="flex justify-end space-x-2 pt-4">
+                <div className="flex justify-end space-x-4 pt-6 border-t border-gray-200">
                   <button
                     type="button"
                     onClick={() => setShowAddUser(false)}
-                    className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
+                    className="px-8 py-3 text-base font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                    className="px-8 py-3 text-base font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                   >
                     Create User
                   </button>
@@ -1084,119 +1332,398 @@ export default function DeveloperDashboard() {
         </div>
       )}
 
-      {/* Add Organization Modal */}
-      {showAddOrganization && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-10 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white max-h-screen overflow-y-auto">
-            <div className="mt-3">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Add New Organization</h3>
-              <form onSubmit={handleCreateOrganization} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Organization Name</label>
-                  <input
-                    type="text"
-                    required
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                    value={organizationForm.name}
-                    onChange={(e) => setOrganizationForm({...organizationForm, name: e.target.value})}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Owner Name</label>
-                  <input
-                    type="text"
-                    required
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                    value={organizationForm.ownerName}
-                    onChange={(e) => setOrganizationForm({...organizationForm, ownerName: e.target.value})}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Owner Email</label>
-                  <input
-                    type="email"
-                    required
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                    value={organizationForm.ownerEmail}
-                    onChange={(e) => setOrganizationForm({...organizationForm, ownerEmail: e.target.value})}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Owner Phone</label>
-                  <input
-                    type="tel"
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                    value={organizationForm.ownerPhone}
-                    onChange={(e) => setOrganizationForm({...organizationForm, ownerPhone: e.target.value})}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Organization Type</label>
-                  <select
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                    value={organizationForm.organizationType}
-                    onChange={(e) => setOrganizationForm({...organizationForm, organizationType: e.target.value})}
-                  >
-                    <option value="client-organization">Client Organization</option>
-                    <option value="my-organization">My Organization</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Industry</label>
-                  <input
-                    type="text"
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                    value={organizationForm.industry}
-                    onChange={(e) => setOrganizationForm({...organizationForm, industry: e.target.value})}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Subscription Plan</label>
-                  <select
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                    value={organizationForm.subscriptionPlan}
-                    onChange={(e) => setOrganizationForm({...organizationForm, subscriptionPlan: e.target.value})}
-                  >
-                    <option value="trial">Trial</option>
-                    <option value="basic">Basic</option>
-                    <option value="premium">Premium</option>
-                  </select>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
+      {/* Edit User Modal */}
+      {showEditUser && editingUser && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
+          <div className="relative w-full max-w-4xl bg-white rounded-lg shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="p-8">
+              <h3 className="text-xl font-semibold text-gray-900 mb-8">Edit User</h3>
+              <form onSubmit={handleUpdateUser} className="space-y-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Max Users</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Username</label>
                     <input
-                      type="number"
-                      min="1"
-                      className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                      value={organizationForm.maxUsers}
-                      onChange={(e) => setOrganizationForm({...organizationForm, maxUsers: parseInt(e.target.value)})}
+                      type="text"
+                      required
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={formData.username}
+                      onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Max Products</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
                     <input
-                      type="number"
-                      min="1"
-                      className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                      value={organizationForm.maxProducts}
-                      onChange={(e) => setOrganizationForm({...organizationForm, maxProducts: parseInt(e.target.value)})}
+                      type="text"
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={formData.fullName}
+                      onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                    <input
+                      type="email"
+                      required
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Password (leave blank to keep current)</label>
+                    <input
+                      type="password"
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={formData.password}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      placeholder="Enter new password or leave blank"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Role</label>
+                    <select
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={formData.role}
+                      onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                    >
+                      <option value="staff">Staff</option>
+                      <option value="manager">Manager</option>
+                      <option value="admin">Admin</option>
+                      <option value="superadmin">Super Admin</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                    <input
+                      type="tel"
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                     />
                   </div>
                 </div>
-                <div className="flex justify-end space-x-2 pt-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Organization (Optional)</label>
+                  <select
+                    className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value={formData.businessId}
+                    onChange={(e) => setFormData({ ...formData, businessId: e.target.value })}
+                  >
+                    <option value="">No Organization</option>
+                    {organizations.map((org) => (
+                      <option key={org._id} value={org._id}>
+                        {org.name} ({org.organizationType})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex justify-end space-x-4 pt-6 border-t border-gray-200">
                   <button
                     type="button"
-                    onClick={() => setShowAddOrganization(false)}
-                    className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
+                    onClick={() => {
+                      setShowEditUser(false);
+                      setEditingUser(null);
+                      setFormData({
+                        username: '',
+                        email: '',
+                        password: '',
+                        fullName: '',
+                        phone: '',
+                        role: 'staff',
+                        businessId: ''
+                      });
+                    }}
+                    className="px-8 py-3 text-base font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                    className="px-8 py-3 text-base font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    Update User
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Organization Modal */}
+      {showAddOrganization && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
+          <div className="relative w-full max-w-5xl bg-white rounded-lg shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="p-8">
+              <h3 className="text-xl font-semibold text-gray-900 mb-8">Add New Organization</h3>
+              <form onSubmit={handleCreateOrganization} className="space-y-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Organization Name</label>
+                    <input
+                      type="text"
+                      required
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      value={organizationForm.name}
+                      onChange={(e) => setOrganizationForm({ ...organizationForm, name: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Organization Type</label>
+                    <select
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      value={organizationForm.organizationType}
+                      onChange={(e) => setOrganizationForm({ ...organizationForm, organizationType: e.target.value })}
+                    >
+                      <option value="client-organization">Client Organization</option>
+                      <option value="my-organization">My Organization</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Owner Name</label>
+                    <input
+                      type="text"
+                      required
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      value={organizationForm.ownerName}
+                      onChange={(e) => setOrganizationForm({ ...organizationForm, ownerName: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Owner Email</label>
+                    <input
+                      type="email"
+                      required
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      value={organizationForm.ownerEmail}
+                      onChange={(e) => setOrganizationForm({ ...organizationForm, ownerEmail: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Owner Phone</label>
+                    <input
+                      type="tel"
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      value={organizationForm.ownerPhone}
+                      onChange={(e) => setOrganizationForm({ ...organizationForm, ownerPhone: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Industry</label>
+                    <input
+                      type="text"
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      value={organizationForm.industry}
+                      onChange={(e) => setOrganizationForm({ ...organizationForm, industry: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Subscription Plan</label>
+                    <select
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      value={organizationForm.subscriptionPlan}
+                      onChange={(e) => setOrganizationForm({ ...organizationForm, subscriptionPlan: e.target.value })}
+                    >
+                      <option value="trial">Trial</option>
+                      <option value="basic">Basic</option>
+                      <option value="premium">Premium</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Website</label>
+                    <input
+                      type="url"
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      value={organizationForm.website}
+                      onChange={(e) => setOrganizationForm({ ...organizationForm, website: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Max Users</label>
+                    <input
+                      type="number"
+                      min="1"
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      value={organizationForm.maxUsers}
+                      onChange={(e) => setOrganizationForm({ ...organizationForm, maxUsers: parseInt(e.target.value) })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Max Products</label>
+                    <input
+                      type="number"
+                      min="1"
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      value={organizationForm.maxProducts}
+                      onChange={(e) => setOrganizationForm({ ...organizationForm, maxProducts: parseInt(e.target.value) })}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                  <textarea
+                    rows={4}
+                    className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    value={organizationForm.description}
+                    onChange={(e) => setOrganizationForm({ ...organizationForm, description: e.target.value })}
+                    placeholder="Enter organization description..."
+                  />
+                </div>
+                <div className="flex justify-end space-x-4 pt-6 border-t border-gray-200">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddOrganization(false)}
+                    className="px-8 py-3 text-base font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-8 py-3 text-base font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
                   >
                     Create Organization
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Edit Organization Modal */}
+      {showEditOrganization && editingOrganization && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
+          <div className="relative w-full max-w-5xl bg-white rounded-lg shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="p-8">
+              <h3 className="text-xl font-semibold text-gray-900 mb-8">Edit Organization</h3>
+              <form onSubmit={handleUpdateOrganization} className="space-y-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Organization Name</label>
+                    <input
+                      type="text"
+                      required
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={organizationForm.name}
+                      onChange={(e) => setOrganizationForm({ ...organizationForm, name: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Organization Type</label>
+                    <select
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={organizationForm.organizationType}
+                      onChange={(e) => setOrganizationForm({ ...organizationForm, organizationType: e.target.value })}
+                    >
+                      <option value="client-organization">Client Organization</option>
+                      <option value="my-organization">My Organization</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Owner Name</label>
+                    <input
+                      type="text"
+                      required
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={organizationForm.ownerName}
+                      onChange={(e) => setOrganizationForm({ ...organizationForm, ownerName: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Owner Email</label>
+                    <input
+                      type="email"
+                      required
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={organizationForm.ownerEmail}
+                      onChange={(e) => setOrganizationForm({ ...organizationForm, ownerEmail: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Owner Phone</label>
+                    <input
+                      type="tel"
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={organizationForm.ownerPhone}
+                      onChange={(e) => setOrganizationForm({ ...organizationForm, ownerPhone: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Industry</label>
+                    <input
+                      type="text"
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={organizationForm.industry}
+                      onChange={(e) => setOrganizationForm({ ...organizationForm, industry: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Subscription Plan</label>
+                    <select
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={organizationForm.subscriptionPlan}
+                      onChange={(e) => setOrganizationForm({ ...organizationForm, subscriptionPlan: e.target.value })}
+                    >
+                      <option value="trial">Trial</option>
+                      <option value="basic">Basic</option>
+                      <option value="premium">Premium</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Website</label>
+                    <input
+                      type="url"
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={organizationForm.website}
+                      onChange={(e) => setOrganizationForm({ ...organizationForm, website: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Max Users</label>
+                    <input
+                      type="number"
+                      min="1"
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={organizationForm.maxUsers}
+                      onChange={(e) => setOrganizationForm({ ...organizationForm, maxUsers: parseInt(e.target.value) })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Max Products</label>
+                    <input
+                      type="number"
+                      min="1"
+                      className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value={organizationForm.maxProducts}
+                      onChange={(e) => setOrganizationForm({ ...organizationForm, maxProducts: parseInt(e.target.value) })}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                  <textarea
+                    rows={4}
+                    className="block w-full border border-gray-300 rounded-md px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value={organizationForm.description}
+                    onChange={(e) => setOrganizationForm({ ...organizationForm, description: e.target.value })}
+                    placeholder="Enter organization description..."
+                  />
+                </div>
+                <div className="flex justify-end space-x-4 pt-6 border-t border-gray-200">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEditOrganization(false);
+                      setEditingOrganization(null);
+                    }}
+                    className="px-8 py-3 text-base font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-8 py-3 text-base font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    Update Organization
                   </button>
                 </div>
               </form>

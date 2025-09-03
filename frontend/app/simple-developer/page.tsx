@@ -875,7 +875,7 @@ export default function DeveloperDashboard() {
             {/* Users Table */}
             <div className="bg-white shadow rounded-lg overflow-hidden">
               {/* Debug Information */}
-              <div className="px-6 py-4 bg-yellow-50 border-b border-yellow-200">
+              {/* <div className="px-6 py-4 bg-yellow-50 border-b border-yellow-200">
                 <div className="text-sm text-yellow-800">
                   <p><strong>Debug Info:</strong></p>
                   <p>Total users: {users.length}</p>
@@ -883,7 +883,7 @@ export default function DeveloperDashboard() {
                   <p>Search term: "{searchTerm}"</p>
                   <p>Loading: {loading ? 'Yes' : 'No'}</p>
                 </div>
-              </div>
+              </div> */}
 
               <div className="min-w-full divide-y divide-gray-200">
                 <div className="bg-gray-50 px-6 py-3">

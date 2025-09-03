@@ -146,11 +146,29 @@ const PORT = process.env.PORT || 5001;
 const startServer = async () => {
   await connectDB();
   
+  // Get network interfaces to find the local IP
+  const getNetworkIP = () => {
+    const os = require('os');
+    const interfaces = os.networkInterfaces();
+    
+    for (const interfaceName in interfaces) {
+      const networkInterface = interfaces[interfaceName];
+      for (const alias of networkInterface) {
+        if (alias.family === 'IPv4' && !alias.internal) {
+          return alias.address;
+        }
+      }
+    }
+    return 'localhost';
+  };
+  
+  const networkIP = getNetworkIP();
+  
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`Server accessible at:`);
     console.log(`- Local: http://localhost:${PORT}`);
-    console.log(`- Network: http://192.168.1.14:${PORT}`);
+    console.log(`- Network: http://${networkIP}:${PORT}`);
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   });
 };

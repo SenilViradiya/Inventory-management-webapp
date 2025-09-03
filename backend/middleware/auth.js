@@ -4,43 +4,91 @@ const Shop = require('../models/Shop');
 
 // Middleware to authenticate JWT tokens
 const authenticateToken = async (req, res, next) => {
+  console.log('🔐 authenticateToken middleware called');
+  console.log('🌐 Request URL:', req.originalUrl);
+  console.log('📡 Request Method:', req.method);
+  console.log('🌍 Client IP:', req.ip || req.connection.remoteAddress);
+  
   try {
     const authHeader = req.headers.authorization;
+    console.log('🔑 Authorization Header Present:', !!authHeader);
+    console.log('🔑 Authorization Header:', authHeader ? authHeader.substring(0, 20) + '...' : 'Not present');
+    
     const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+    console.log('🎟️ Token extracted:', token ? token.substring(0, 20) + '...' : 'No token');
 
     if (!token) {
+      console.log('❌ No token provided');
       return res.status(401).json({ message: 'Access token required' });
     }
 
+    console.log('🔓 Attempting to verify token...');
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
+    console.log('✅ Token decoded successfully:', {
+      userId: decoded.id,
+      shopId: decoded.shopId,
+      exp: new Date(decoded.exp * 1000),
+      iat: new Date(decoded.iat * 1000)
+    });
     
     // Get user info from database with role populated
+    console.log('👤 Fetching user from database...');
     const user = await User.findById(decoded.id)
       .select('-password')
       .populate('role', 'name permissions')
       .populate('shop', 'name owner');
       
     if (!user || !user.isActive) {
+      console.log('❌ User not found or inactive:', {
+        userFound: !!user,
+        isActive: user?.isActive
+      });
       return res.status(401).json({ message: 'Invalid or inactive user' });
     }
 
+    console.log('✅ User found and active:', {
+      id: user._id,
+      username: user.username,
+      role: user.role?.name,
+      shop: user.shop?.name,
+      isActive: user.isActive
+    });
+
     // Validate shopId from token
     if (decoded.shopId && (!user.shop || user.shop._id.toString() !== decoded.shopId)) {
+      console.log('❌ Shop validation failed:', {
+        tokenShopId: decoded.shopId,
+        userShopId: user.shop?._id?.toString(),
+        hasShop: !!user.shop
+      });
       return res.status(403).json({ message: 'Invalid shop access' });
     }
 
+    console.log('✅ Shop validation passed');
+
     // Update last login
     await User.findByIdAndUpdate(decoded.id, { lastLogin: new Date() });
+    console.log('📝 Last login updated');
 
     req.user = user;
+    console.log('✅ Authentication successful, proceeding to next middleware');
     next();
   } catch (error) {
+    console.error('❌ Authentication error:', {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    });
+    
     if (error.name === 'JsonWebTokenError') {
+      console.log('❌ Invalid JWT token');
       return res.status(401).json({ message: 'Invalid token' });
     }
     if (error.name === 'TokenExpiredError') {
+      console.log('❌ JWT token expired');
       return res.status(401).json({ message: 'Token expired' });
     }
+    console.log('❌ General authentication error');
     res.status(500).json({ message: 'Authentication error', error: error.message });
   }
 };

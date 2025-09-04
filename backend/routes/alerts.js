@@ -1,8 +1,40 @@
 const express = require('express');
 const router = express.Router();
+// GET /api/alerts - Get latest alerts (limit)
+
 const Product = require('../models/Product');
 const { authenticateToken } = require('../middleware/auth');
+router.get('/', authenticateToken, async (req, res) => {
+  try {
+    const { limit = 5 } = req.query;
+    // Get latest products with alerts (low stock, expiring soon, expired)
+    const products = await Product.find({})
+      .populate('createdBy', 'username fullName')
+      .sort({ updatedAt: -1 })
+      .limit(parseInt(limit));
 
+    // Filter for products with any alert condition
+    const alerts = products.filter(product => product.isLowStock || product.isExpiringSoon || product.isExpired || product.quantity === 0);
+
+    res.json({
+      alerts: alerts.map(product => ({
+        id: product._id,
+        name: product.name,
+        category: product.category,
+        currentQuantity: product.quantity,
+        threshold: product.lowStockThreshold,
+        price: product.price,
+        qrCode: product.qrCode,
+        image: product.image,
+        createdBy: product.createdBy,
+        severity: product.quantity === 0 || product.isExpired ? 'critical' : product.isLowStock ? 'warning' : product.isExpiringSoon ? 'info' : 'info'
+      })),
+      count: alerts.length
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching alerts', error: error.message });
+  }
+});
 // GET /api/alerts/low-stock - Get low stock alerts
 router.get('/low-stock', authenticateToken, async (req, res) => {
   try {

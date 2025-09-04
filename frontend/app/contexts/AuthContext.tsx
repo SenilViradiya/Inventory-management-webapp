@@ -11,7 +11,7 @@ interface User {
   username: string;
   email: string;
   fullName: string;
-  role: 'admin' | 'staff';
+  role: 'admin' | 'staff' | 'superadmin';
   lastLogin: string;
   shop?: string; // Add shopId for product creation
 }

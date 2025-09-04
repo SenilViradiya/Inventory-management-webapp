@@ -4,11 +4,44 @@ const swaggerDefinition = {
   openapi: '3.0.0',
   info: {
     title: 'Inventory Management System API',
-    version: '1.0.0',
-    description: 'Comprehensive API for off-license shop inventory management with barcode scanning, stock tracking, and analytics',
+    version: '2.0.0',
+    description: `
+# Comprehensive Inventory Management System API
+
+## Overview
+Advanced inventory management system for off-license shops with:
+- **Batch-level inventory tracking** with FEFO (First Expired First Out) algorithm
+- **Dynamic pricing & promotion management** 
+- **Expiry management & dead stock handling**
+- **Real-time analytics & reporting** with CSV/PDF exports
+- **QR code scanning & barcode support**
+- **Role-based access control** (Admin/Staff)
+- **Comprehensive activity logging**
+- **Developer metrics & analytics**
+
+## Key Features
+- 🏪 Multi-shop support with role-based access
+- 📦 Batch-level stock tracking with expiry dates
+- 💰 Dynamic promotion pricing system
+- 📊 Real-time analytics dashboard
+- 📱 Mobile-friendly API endpoints
+- 🔐 JWT authentication with refresh tokens
+- 📄 CSV/PDF report generation
+- 🔔 Smart alerts & notifications
+- 📈 Developer metrics collection
+
+## Authentication
+All protected endpoints require a Bearer token in the Authorization header:
+\`Authorization: Bearer <your-jwt-token>\`
+
+## Environment Variables
+- **MONGODB_URI**: MongoDB connection string
+- **JWT_SECRET**: Secret for JWT token signing
+- **NODE_ENV**: Environment (development/production)
+    `,
     contact: {
       name: 'API Support',
-      email: 'support@example.com',
+      email: 'support@inventorymanagement.com',
     },
     license: {
       name: 'MIT',
@@ -18,11 +51,19 @@ const swaggerDefinition = {
   servers: [
     {
       url: 'http://localhost:5001/api',
-      description: 'Development server',
+      description: 'Local Development Server',
     },
     {
-      url: 'https://your-production-url.com/api',
-      description: 'Production server',
+      url: 'http://192.168.1.100:5001/api',
+      description: 'Local Network Server (replace with your IP)',
+    },
+    {
+      url: 'https://api.yourdomain.com/api',
+      description: 'Production Server',
+    },
+    {
+      url: 'https://staging-api.yourdomain.com/api',
+      description: 'Staging Server',
     },
   ],
   components: {
@@ -322,6 +363,297 @@ const swaggerDefinition = {
             type: 'string',
             description: 'Reason for stock reduction',
             example: 'Sale',
+          },
+        },
+      },
+      ProductBatch: {
+        type: 'object',
+        required: ['productId', 'quantity', 'purchasePrice'],
+        properties: {
+          _id: {
+            type: 'string',
+            description: 'Unique identifier for the batch',
+            example: '60d5ecb54b24a0c8e8f5d789',
+          },
+          productId: {
+            type: 'string',
+            description: 'Reference to the product',
+            example: '60d5ecb54b24a0c8e8f5d456',
+          },
+          supplierId: {
+            type: 'string',
+            description: 'Reference to the supplier',
+            example: '60d5ecb54b24a0c8e8f5d321',
+          },
+          quantity: {
+            type: 'integer',
+            minimum: 0,
+            description: 'Quantity in this batch',
+            example: 50,
+          },
+          purchasePrice: {
+            type: 'number',
+            minimum: 0,
+            description: 'Purchase price per unit',
+            example: 1.25,
+          },
+          expiryDate: {
+            type: 'string',
+            format: 'date-time',
+            description: 'Expiry date of the batch',
+            example: '2024-12-31T00:00:00.000Z',
+          },
+          batchNumber: {
+            type: 'string',
+            description: 'Supplier batch number',
+            example: 'BATCH001',
+          },
+          status: {
+            type: 'string',
+            enum: ['active', 'expired', 'sold_out'],
+            description: 'Current status of the batch',
+            example: 'active',
+          },
+          notes: {
+            type: 'string',
+            description: 'Additional notes about the batch',
+            example: 'Fresh delivery from main supplier',
+          },
+          createdAt: {
+            type: 'string',
+            format: 'date-time',
+            example: '2024-01-01T00:00:00.000Z',
+          },
+          updatedAt: {
+            type: 'string',
+            format: 'date-time',
+            example: '2024-01-15T10:30:00.000Z',
+          },
+        },
+      },
+      Promotion: {
+        type: 'object',
+        required: ['name', 'productIds', 'discountType', 'discountValue', 'startDate', 'endDate'],
+        properties: {
+          _id: {
+            type: 'string',
+            description: 'Unique identifier for the promotion',
+            example: '60d5ecb54b24a0c8e8f5d999',
+          },
+          name: {
+            type: 'string',
+            description: 'Promotion name',
+            example: 'Weekend Special 20% Off',
+          },
+          productIds: {
+            type: 'array',
+            items: {
+              type: 'string',
+            },
+            description: 'Array of product IDs included in promotion',
+            example: ['60d5ecb54b24a0c8e8f5d456', '60d5ecb54b24a0c8e8f5d457'],
+          },
+          discountType: {
+            type: 'string',
+            enum: ['percentage', 'fixed'],
+            description: 'Type of discount',
+            example: 'percentage',
+          },
+          discountValue: {
+            type: 'number',
+            minimum: 0,
+            description: 'Discount value (percentage or fixed amount)',
+            example: 20,
+          },
+          startDate: {
+            type: 'string',
+            format: 'date-time',
+            description: 'Promotion start date',
+            example: '2024-09-01T00:00:00.000Z',
+          },
+          endDate: {
+            type: 'string',
+            format: 'date-time',
+            description: 'Promotion end date',
+            example: '2024-09-30T23:59:59.000Z',
+          },
+          isActive: {
+            type: 'boolean',
+            description: 'Whether the promotion is active',
+            example: true,
+          },
+          conditions: {
+            type: 'object',
+            properties: {
+              minQuantity: {
+                type: 'integer',
+                description: 'Minimum quantity required',
+                example: 2,
+              },
+              maxQuantity: {
+                type: 'integer',
+                description: 'Maximum quantity allowed',
+                example: 10,
+              },
+            },
+          },
+          shopId: {
+            type: 'string',
+            description: 'Shop ID for multi-shop setup',
+            example: '60d5ecb54b24a0c8e8f5d111',
+          },
+          createdAt: {
+            type: 'string',
+            format: 'date-time',
+            example: '2024-01-01T00:00:00.000Z',
+          },
+          updatedAt: {
+            type: 'string',
+            format: 'date-time',
+            example: '2024-01-15T10:30:00.000Z',
+          },
+        },
+      },
+      DeveloperMetric: {
+        type: 'object',
+        required: ['app', 'metricType', 'eventName'],
+        properties: {
+          _id: {
+            type: 'string',
+            description: 'Unique identifier for the metric',
+            example: '60d5ecb54b24a0c8e8f5d888',
+          },
+          app: {
+            type: 'string',
+            description: 'Application name',
+            example: 'InventoryMobileApp',
+          },
+          version: {
+            type: 'string',
+            description: 'Application version',
+            example: '1.0.0',
+          },
+          metricType: {
+            type: 'string',
+            enum: ['user_action', 'performance', 'error', 'system'],
+            description: 'Type of metric',
+            example: 'user_action',
+          },
+          eventName: {
+            type: 'string',
+            description: 'Name of the event',
+            example: 'scan_product',
+          },
+          userId: {
+            type: 'string',
+            description: 'User ID (optional)',
+            example: '60d5ecb54b24a0c8e8f5d123',
+          },
+          sessionId: {
+            type: 'string',
+            description: 'Session ID',
+            example: 'session_12345',
+          },
+          deviceInfo: {
+            type: 'object',
+            properties: {
+              platform: {
+                type: 'string',
+                example: 'android',
+              },
+              version: {
+                type: 'string',
+                example: '12',
+              },
+              model: {
+                type: 'string',
+                example: 'Samsung Galaxy S21',
+              },
+            },
+          },
+          customData: {
+            type: 'object',
+            description: 'Custom event data',
+            example: {
+              scanType: 'qr_code',
+              success: true,
+              responseTime: 1250,
+            },
+          },
+          timestamp: {
+            type: 'string',
+            format: 'date-time',
+            example: '2024-01-15T10:30:00.000Z',
+          },
+        },
+      },
+      AnalyticsResponse: {
+        type: 'object',
+        properties: {
+          summary: {
+            type: 'object',
+            properties: {
+              totalRevenue: {
+                type: 'number',
+                example: 1250.50,
+              },
+              totalCost: {
+                type: 'number',
+                example: 850.25,
+              },
+              totalProfit: {
+                type: 'number',
+                example: 400.25,
+              },
+              totalTransactions: {
+                type: 'integer',
+                example: 45,
+              },
+              totalItems: {
+                type: 'integer',
+                example: 128,
+              },
+              averageTransactionValue: {
+                type: 'number',
+                example: 27.79,
+              },
+            },
+          },
+          stockAdditions: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                productName: { type: 'string' },
+                totalQuantity: { type: 'integer' },
+                totalCost: { type: 'number' },
+                batchCount: { type: 'integer' },
+              },
+            },
+          },
+          salesSummary: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                productName: { type: 'string' },
+                quantitySold: { type: 'integer' },
+                revenue: { type: 'number' },
+                profit: { type: 'number' },
+              },
+            },
+          },
+          priceChanges: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                productName: { type: 'string' },
+                changes: { type: 'integer' },
+                lastOldPrice: { type: 'number' },
+                lastNewPrice: { type: 'number' },
+              },
+            },
           },
         },
       },

@@ -534,4 +534,51 @@ router.get('/stock-valuation', authenticateToken, requireRole('admin'), async (r
   }
 });
 
+// GET /api/reports/dead-stock - report expired / discarded batches
+router.get('/dead-stock', authenticateToken, requireRole('admin'), async (req, res) => {
+  try {
+    const ProductBatch = require('../models/ProductBatch');
+    const { format = 'csv', startDate, endDate } = req.query;
+
+    const start = startDate ? new Date(startDate) : new Date(0);
+    const end = endDate ? new Date(endDate) : new Date();
+
+    const batches = await ProductBatch.find({ status: 'expired', updatedAt: { $gte: start, $lte: end } }).populate('productId');
+
+    const reportData = batches.map(b => ({
+      product: b.productId ? b.productId.name : 'Unknown',
+      productId: b.productId ? b.productId._id : '',
+      batchNumber: b.batchNumber,
+      expiryDate: b.expiryDate ? b.expiryDate.toISOString().split('T')[0] : '',
+      qty: b.totalQty,
+      purchasePrice: b.purchasePrice || 0,
+      deadValue: ((b.purchasePrice || 0) * (b.totalQty || 0)).toFixed(2)
+    }));
+
+    // Log the export activity
+    await new (require('../models/ActivityLog'))({
+      userId: req.user.id,
+      action: 'EXPORT_REPORT',
+      details: `Exported dead-stock report (${format.toUpperCase()}) - ${reportData.length} batches`
+    }).save();
+
+    if (format === 'pdf') {
+      const headers = ['Product', 'Batch', 'Expiry', 'Qty', 'Purchase Price', 'Dead Value'];
+      const pdfData = reportData.map(r => ({ product: r.product, batch: r.batchNumber, expiry: r.expiryDate, qty: r.qty, price: `$${r.purchasePrice}`, value: `$${r.deadValue}` }));
+      const { generatePDF } = require('./reports');
+      // reuse existing generatePDF helper is not exported; fallback to CSV for now
+      res.status(501).json({ message: 'PDF export not implemented for dead-stock yet' });
+      return;
+    }
+
+    const fields = ['product', 'productId', 'batchNumber', 'expiryDate', 'qty', 'purchasePrice', 'deadValue'];
+    const csv = new (require('json2csv').Parser)({ fields }).parse(reportData);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="dead_stock_report.csv"');
+    res.send(csv);
+  } catch (err) {
+    res.status(500).json({ message: 'Error generating dead-stock report', error: err.message });
+  }
+});
+
 module.exports = router;

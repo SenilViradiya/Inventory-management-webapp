@@ -1,718 +1,401 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext';
 import { useProducts } from '../contexts/ProductsContext';
-import { useRouter } from 'next/navigation';
-import { productsAPI, api } from '../lib/api';
-import Navigation from '../components/Navigation';
-import toast from 'react-hot-toast';
-
-interface Product {
-  _id: string;
-  name: string;
-  price: number;
-  quantity: number; // Legacy field for backward compatibility
-  stock?: {
-    godown: number;
-    store: number;
-    total: number;
-    reserved: number;
-  };
-  qrCode: string;
-  image?: string;
-  imageUrl?: string;
-  category: string;
-  expirationDate: string;
-  description?: string;
-  lowStockThreshold?: number;
-  createdAt: string;
-  updatedAt: string;
-}
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
+import { Badge } from '../../components/ui/badge';
+import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
+import { toast } from 'react-hot-toast';
+import { PlusIcon, SearchIcon, EditIcon, TrashIcon, PackageIcon } from 'lucide-react';
 
 export default function ProductsPage() {
-  const { user } = useAuth();
-  const { products, categories: apiCategories, loading: productsLoading, categoriesLoading, refreshProducts } = useProducts();
-  const router = useRouter();
-  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [sortBy, setSortBy] = useState('name');
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const {
+    products,
+    loading,
+    categories,
+    currentPage,
+    totalPages,
+    filters,
+    setFilters,
+    clearFilters,
+    createProduct,
+    updateProduct,
+    deleteProduct,
+    fetchProducts,
+    fetchCategories
+  } = useProducts();
 
-  // Create categories array with 'all' option plus dynamic categories
-  const categories = ['all', ...apiCategories.map(cat => cat._id)];
-  const getCategoryDisplayName = (categoryId: string) => {
-    if (categoryId === 'all') return 'All Categories';
-    const category = apiCategories.find(cat => cat._id === categoryId);
-    return category ? category.name : categoryId;
-  };
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<any>(null);
+  const [localSearchTerm, setLocalSearchTerm] = useState('');
+  const [localCategoryFilter, setLocalCategoryFilter] = useState('');
+  const [formData, setFormData] = useState({
+    name: '',
+    price: 0,
+    categoryId: '',
+    description: '',
+    quantity: 0,
+    lowStockThreshold: 0
+  });
 
   useEffect(() => {
-    if (!user) {
-      router.push('/login');
-    }
-  }, [user, router]);
+    fetchCategories();
+    fetchProducts();
+  }, []);
 
   useEffect(() => {
-    filterAndSortProducts();
-  }, [products, searchTerm, selectedCategory, sortBy]);
+    const timer = setTimeout(() => {
+      if (localSearchTerm) {
+        setFilters({ ...filters, search: localSearchTerm });
+      }
+    }, 300);
 
-  const filterAndSortProducts = () => {
-    let filtered = products.filter(product => {
-      const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           product.qrCode.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesCategory = selectedCategory === 'all' || product.category === selectedCategory;
-      return matchesSearch && matchesCategory;
-    });
+    return () => clearTimeout(timer);
+  }, [localSearchTerm]);
 
-    filtered.sort((a, b) => {
-      switch (sortBy) {
-        case 'name':
-          return a.name.localeCompare(b.name);
-        case 'price':
-          return a.price - b.price;
-        case 'stock':
-          // Use new stock structure, fall back to legacy quantity
-          const aStock = a.stock?.total || a.quantity || 0;
-          const bStock = b.stock?.total || b.quantity || 0;
-          return bStock - aStock;
-        case 'category':
-          return a.category.localeCompare(b.category);
-        default:
-          return 0;
+  const convertToFormData = (data: any): FormData => {
+    const formData = new FormData();
+    Object.keys(data).forEach(key => {
+      if (data[key] !== null && data[key] !== undefined) {
+        formData.append(key, data[key].toString());
       }
     });
-
-    setFilteredProducts(filtered);
+    return formData;
   };
 
-  const handleDelete = async (productId: string, productName: string) => {
-    if (!confirm(`Are you sure you want to delete "${productName}"?\n\nThis action cannot be undone.`)) {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!formData.name.trim()) {
+      toast.error('Product name is required');
       return;
     }
 
     try {
-      console.log('Deleting product:', productId); // Debug log
-      await productsAPI.delete(productId);
-      toast.success(`Product "${productName}" deleted successfully`);
-      refreshProducts();
-    } catch (error: any) {
-      console.error('Delete error:', error); // Debug log
-      const errorMessage = error.response?.data?.message || error.message || 'Failed to delete product';
-      toast.error(`Delete failed: ${errorMessage}`);
+      if (editingProduct) {
+        await updateProduct(editingProduct._id, convertToFormData(formData));
+        toast.success('Product updated successfully');
+      } else {
+        await createProduct(convertToFormData(formData));
+        toast.success('Product created successfully');
+      }
+      
+      resetForm();
+      fetchProducts();
+    } catch (error) {
+      console.error('Error saving product:', error);
+      toast.error('Failed to save product');
     }
   };
 
-  const adjustQuantity = async (productId: string, newQuantity: number) => {
-    if (newQuantity < 0) {
-      toast.error('Quantity cannot be negative');
+  const handleEdit = (product: any) => {
+    setEditingProduct(product);
+    setFormData({
+      name: product.name,
+      price: product.price,
+      categoryId: product.categoryId || '',
+      description: product.description || '',
+      quantity: product.quantity,
+      lowStockThreshold: product.lowStockThreshold
+    });
+    setShowCreateForm(true);
+  };
+
+  const handleDelete = async (productId: string) => {
+    if (!confirm('Are you sure you want to delete this product?')) {
       return;
     }
 
     try {
-      console.log('Adjusting quantity for product:', productId, 'to:', newQuantity); // Debug log
-      
-      // Use the new PATCH endpoint for quantity updates
-      await api.patch(`/products/${productId}/quantity`, {
-        quantity: newQuantity
-      });
-      
-      toast.success(`Quantity updated to ${newQuantity}`);
-      refreshProducts();
-    } catch (error: any) {
-      console.error('Quantity update error:', error); // Debug log
-      const errorMessage = error.response?.data?.message || error.message || 'Failed to update quantity';
-      toast.error(`Update failed: ${errorMessage}`);
+      await deleteProduct(productId);
+      toast.success('Product deleted successfully');
+      fetchProducts();
+    } catch (error) {
+      console.error('Error deleting product:', error);
+      toast.error('Failed to delete product');
     }
   };
 
-  const getStockStatusColor = (quantity: number) => {
-    if (quantity === 0) return 'text-red-600 bg-red-50';
-    if (quantity <= 5) return 'text-orange-600 bg-orange-50';
-    return 'text-green-600 bg-green-50';
+  const resetForm = () => {
+    setFormData({
+      name: '',
+      price: 0,
+      categoryId: '',
+      description: '',
+      quantity: 0,
+      lowStockThreshold: 0
+    });
+    setEditingProduct(null);
+    setShowCreateForm(false);
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-GB', {
-      style: 'currency',
-      currency: 'GBP'
-    }).format(amount);
+  const getStockStatus = (product: any) => {
+    if (product.quantity === 0) {
+      return { status: 'Out of Stock', color: 'bg-red-100 text-red-800' };
+    } else if (product.quantity <= product.lowStockThreshold) {
+      return { status: 'Low Stock', color: 'bg-yellow-100 text-yellow-800' };
+    } else {
+      return { status: 'In Stock', color: 'bg-green-100 text-green-800' };
+    }
   };
 
-  if (productsLoading) {
+  const handleCategoryFilterChange = (categoryId: string) => {
+    setLocalCategoryFilter(categoryId);
+    setFilters({ ...filters, category: categoryId || undefined });
+  };
+
+  const handleClearFilters = () => {
+    setLocalSearchTerm('');
+    setLocalCategoryFilter('');
+    clearFilters();
+  };
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      fetchProducts(newPage);
+    }
+  };
+
+  if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navigation />
-      
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <div className="flex justify-between items-center mb-6">
-            <h1 className="text-3xl font-bold text-gray-900">Products</h1>
-            <button
-              onClick={() => setShowAddForm(true)}
-              className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
-            >
-              + Add Product
-            </button>
-          </div>
-
-          {/* Filters */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex justify-between items-center">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Search
-              </label>
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                placeholder="Search products..."
-              />
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">Products</h1>
+              <p className="text-gray-600">Manage your product inventory</p>
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Category
-              </label>
-              <select
-                value={selectedCategory}
-                onChange={(e) => setSelectedCategory(e.target.value)}
-                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                {categories.map(category => (
-                  <option key={category} value={category}>
-                    {getCategoryDisplayName(category)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Sort By
-              </label>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="name">Name</option>
-                <option value="price">Price</option>
-                <option value="stock">Stock</option>
-                <option value="category">Category</option>
-              </select>
-            </div>
-
-            <div className="flex items-end">
-              <div className="text-sm text-gray-600">
-                Total: {filteredProducts.length} products
-              </div>
-            </div>
+            <Button onClick={() => setShowCreateForm(true)}>
+              <PlusIcon className="w-4 h-4 mr-2" />
+              Add Product
+            </Button>
           </div>
-
-          {/* Products Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredProducts.map((product) => (
-              <div key={product._id} className="bg-gray-50 rounded-lg p-4 border hover:shadow-md transition-shadow">
-                {/* Product Image */}
-                <div className="w-full h-32 bg-gray-200 rounded-lg mb-3 flex items-center justify-center overflow-hidden">
-                  {product.image ? (
-                    <img 
-                      src={`http://localhost:5001${product.image}`} 
-                      alt={product.name}
-                      className="w-full h-32 object-cover rounded-lg"
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        target.style.display = 'none';
-                        const fallback = target.nextElementSibling as HTMLElement;
-                        if (fallback) fallback.style.display = 'flex';
-                      }}
-                    />
-                  ) : (
-                    <div className="text-gray-400 text-sm">No Image</div>
-                  )}
-                  {/* Error fallback (hidden by default) */}
-                  <div className="text-gray-400 text-xs text-center hidden">
-                    Image not available
-                  </div>
-                </div>
-
-                <h3 className="font-semibold text-gray-900 mb-2 truncate">{product.name}</h3>
-                
-                <div className="space-y-1 text-sm text-gray-600 mb-3">
-                  <div>Price: {formatCurrency(product.price)}</div>
-                  <div>Category: {product.category}</div>
-                  <div>QR: {product.qrCode}</div>
-                </div>
-
-                {/* Stock Information */}
-                <div className="space-y-2 mb-3">
-                  <div className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${getStockStatusColor(product.stock?.total || product.quantity || 0)}`}>
-                    Total Stock: {product.stock?.total || product.quantity || 0}
-                  </div>
-                  {product.stock && (
-                    <div className="text-xs text-gray-600 space-y-1 bg-gray-50 p-2 rounded">
-                      <div className="flex justify-between">
-                        <span>Godown:</span>
-                        <span className="font-medium">{product.stock.godown}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Store:</span>
-                        <span className="font-medium">{product.stock.store}</span>
-                      </div>
-                      {product.stock.reserved > 0 && (
-                        <div className="flex justify-between text-orange-600">
-                          <span>Reserved:</span>
-                          <span className="font-medium">{product.stock.reserved}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Legacy Quantity Controls (for backward compatibility) */}
-                <div className="flex items-center space-x-2 mb-3">
-                  <button
-                    onClick={() => adjustQuantity(product._id, Math.max(0, (product.stock?.total || product.quantity || 0) - 1))}
-                    className="w-8 h-8 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-sm font-bold"
-                  >
-                    -
-                  </button>
-                  <span className="font-medium min-w-[3rem] text-center">{product.stock?.total || product.quantity || 0}</span>
-                  <button
-                    onClick={() => adjustQuantity(product._id, (product.stock?.total || product.quantity || 0) + 1)}
-                    className="w-8 h-8 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold"
-                  >
-                    +
-                  </button>
-                </div>
-
-                {/* Actions */}
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => setEditingProduct(product)}
-                    className="flex-1 bg-blue-500 hover:bg-blue-600 text-white text-xs py-1 px-2 rounded transition-colors"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDelete(product._id, product.name)}
-                    className="flex-1 bg-red-500 hover:bg-red-600 text-white text-xs py-1 px-2 rounded transition-colors"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {filteredProducts.length === 0 && (
-            <div className="text-center py-12">
-              <div className="text-gray-500 text-lg">No products found</div>
-              <p className="text-gray-400 mt-2">Try adjusting your search or filters</p>
-            </div>
-          )}
         </div>
-      </div>
 
-      {/* Add/Edit Product Modal */}
-      {(showAddForm || editingProduct) && (
-        <ProductForm
-          product={editingProduct}
-          categories={apiCategories}
-          categoriesLoading={categoriesLoading}
-          onClose={() => {
-            setShowAddForm(false);
-            setEditingProduct(null);
-          }}
-          onSuccess={() => {
-            setShowAddForm(false);
-            setEditingProduct(null);
-            refreshProducts();
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-// Product Form Component
-interface Category {
-  _id: string;
-  name: string;
-  description?: string;
-  icon?: string;
-  color?: string;
-}
-
-interface ProductFormProps {
-  product?: Product | null;
-  categories: Category[];
-  categoriesLoading: boolean;
-  onClose: () => void;
-  onSuccess: () => void;
-}
-
-function ProductForm({ product, categories, categoriesLoading, onClose, onSuccess }: ProductFormProps) {
-  const [formData, setFormData] = useState({
-    name: product?.name || '',
-    price: product?.price || 0,
-    quantity: product?.quantity || 0, // Legacy field for backward compatibility
-    godownStock: product?.stock?.godown || 0,
-    storeStock: product?.stock?.store || 0,
-    lowStockThreshold: product?.lowStockThreshold || 10,
-    qrCode: product?.qrCode || '',
-    category: product?.category || '',
-    description: product?.description || '',
-    expirationDate: product?.expirationDate ? product.expirationDate.split('T')[0] : ''
-  });
-  const [selectedImage, setSelectedImage] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(
-    product?.imageUrl ? product.imageUrl : 
-    product?.image ? `http://localhost:5001${product.image}` : null
-  );
-  const [isLoading, setIsLoading] = useState(false);
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setSelectedImage(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const { user } = useAuth();
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    // Validate form data
-    if (!formData.name.trim()) {
-      toast.error('Product name is required');
-      return;
-    }
-    if (formData.price <= 0) {
-      toast.error('Price must be greater than 0');
-      return;
-    }
-    if (formData.godownStock < 0 || formData.storeStock < 0) {
-      toast.error('Stock quantities cannot be negative');
-      return;
-    }
-    if (!formData.qrCode.trim()) {
-      toast.error('QR Code is required');
-      return;
-    }
-    if (!user || !user.id) {
-      toast.error('User not found. Please login again.');
-      return;
-    }
-    if (!user.shop) {
-      toast.error('No shop assigned to your user. Cannot add product.');
-      return;
-    }
-    setIsLoading(true);
-    try {
-      const submitData = new FormData();
-      submitData.append('name', formData.name.trim());
-      submitData.append('price', formData.price.toString());
-      // Send new stock structure
-      submitData.append('stock[godown]', formData.godownStock.toString());
-      submitData.append('stock[store]', formData.storeStock.toString());
-      submitData.append('lowStockThreshold', formData.lowStockThreshold.toString());
-      // Keep legacy quantity for backward compatibility
-      const totalQuantity = formData.godownStock + formData.storeStock;
-      submitData.append('quantity', totalQuantity.toString());
-      submitData.append('qrCode', formData.qrCode.trim().toUpperCase());
-      submitData.append('category', formData.category);
-      submitData.append('description', formData.description.trim());
-      submitData.append('shopId', user.shop); // Add shopId from user context
-      if (formData.expirationDate) {
-        submitData.append('expirationDate', formData.expirationDate);
-      }
-      if (selectedImage) {
-        submitData.append('image', selectedImage);
-      }
-      if (product) {
-        await productsAPI.update(product._id, submitData);
-        toast.success('Product updated successfully');
-      } else {
-        await productsAPI.create(submitData);
-        toast.success('Product created successfully');
-      }
-      onSuccess();
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to save product');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const generateQRCode = () => {
-    const prefix = formData.category.substring(0, 3).toUpperCase();
-    const random = Math.random().toString(36).substring(2, 8).toUpperCase();
-    setFormData({ ...formData, qrCode: `${prefix}${random}` });
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-md w-full max-h-screen overflow-y-auto">
-        <div className="p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-gray-900">
-              {product ? 'Edit Product' : 'Add New Product'}
-            </h2>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-              ✕
-            </button>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Image Upload */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Product Image</label>
-              <div className="mt-1">
-                {imagePreview ? (
-                  <div className="relative">
-                    <img
-                      src={imagePreview}
-                      alt="Preview"
-                      className="w-full h-32 object-cover rounded-lg border"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedImage(null);
-                        setImagePreview(null);
-                      }}
-                      className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ) : (
-                  <div className="w-full h-32 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="text-gray-500">No image selected</div>
-                    </div>
-                  </div>
-                )}
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageChange}
-                  className="mt-2 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Product Name</label>
-              <input
-                type="text"
-                required
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Price (£)</label>
-                <input
-                  type="number"
-                  required
-                  min="0.01"
-                  step="0.01"
-                  value={formData.price === 0 ? '' : formData.price}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    if (value === '' || value === null) {
-                      setFormData({ ...formData, price: 0 });
-                    } else {
-                      const numValue = parseFloat(value);
-                      if (!isNaN(numValue) && numValue >= 0) {
-                        setFormData({ ...formData, price: numValue });
-                      }
-                    }
-                  }}
-                  placeholder="Enter price"
-                  className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-                <p className="text-xs text-gray-500 mt-1">Price must be greater than £0</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Godown Stock</label>
-                  <input
+        {/* Create/Edit Form */}
+        {showCreateForm && (
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>{editingProduct ? 'Edit Product' : 'Add New Product'}</CardTitle>
+              <CardDescription>
+                {editingProduct ? 'Update product information' : 'Enter product details to add to inventory'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSubmit}>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <Input
+                    placeholder="Product Name *"
+                    value={formData.name}
+                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                    required
+                  />
+                  <Input
                     type="number"
+                    placeholder="Price *"
+                    value={formData.price || ''}
+                    onChange={(e) => setFormData(prev => ({ ...prev, price: Number(e.target.value) }))}
                     required
                     min="0"
-                    value={formData.godownStock === 0 ? '' : formData.godownStock}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      if (value === '' || value === null) {
-                        setFormData({ ...formData, godownStock: 0 });
-                      } else {
-                        const numValue = parseInt(value);
-                        if (!isNaN(numValue) && numValue >= 0) {
-                          setFormData({ ...formData, godownStock: numValue });
-                        }
-                      }
-                    }}
-                    placeholder="Enter godown stock"
-                    className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    step="0.01"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Stock in storage/warehouse</p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Store Stock</label>
-                  <input
+                  <select
+                    className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+                    value={formData.categoryId}
+                    onChange={(e) => setFormData(prev => ({ ...prev, categoryId: e.target.value }))}
+                  >
+                    <option value="">Select Category</option>
+                    {categories.map((category) => (
+                      <option key={category._id} value={category._id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                  <Input
                     type="number"
+                    placeholder="Quantity *"
+                    value={formData.quantity || ''}
+                    onChange={(e) => setFormData(prev => ({ ...prev, quantity: Number(e.target.value) }))}
                     required
                     min="0"
-                    value={formData.storeStock === 0 ? '' : formData.storeStock}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      if (value === '' || value === null) {
-                        setFormData({ ...formData, storeStock: 0 });
-                      } else {
-                        const numValue = parseInt(value);
-                        if (!isNaN(numValue) && numValue >= 0) {
-                          setFormData({ ...formData, storeStock: numValue });
-                        }
-                      }
-                    }}
-                    placeholder="Enter store stock"
-                    className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Stock on shop floor</p>
+                  <Input
+                    type="number"
+                    placeholder="Low Stock Threshold"
+                    value={formData.lowStockThreshold || ''}
+                    onChange={(e) => setFormData(prev => ({ ...prev, lowStockThreshold: Number(e.target.value) }))}
+                    min="0"
+                  />
+                  <Input
+                    placeholder="Description"
+                    value={formData.description}
+                    onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                  />
                 </div>
-              </div>
+                <div className="flex gap-2">
+                  <Button type="submit">
+                    {editingProduct ? 'Update Product' : 'Add Product'}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={resetForm}>
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        )}
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Low Stock Threshold</label>
-                <input
-                  type="number"
-                  required
-                  min="0"
-                  value={formData.lowStockThreshold === 0 ? '' : formData.lowStockThreshold}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    if (value === '' || value === null) {
-                      setFormData({ ...formData, lowStockThreshold: 0 });
-                    } else {
-                      const numValue = parseInt(value);
-                      if (!isNaN(numValue) && numValue >= 0) {
-                        setFormData({ ...formData, lowStockThreshold: numValue });
-                      }
-                    }
-                  }}
-                  placeholder="Enter low stock threshold"
-                  className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+        {/* Filters */}
+        <Card className="mb-6">
+          <CardContent className="pt-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="relative">
+                <SearchIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Input
+                  placeholder="Search products..."
+                  value={localSearchTerm}
+                  onChange={(e) => setLocalSearchTerm(e.target.value)}
+                  className="pl-10"
                 />
-                <p className="text-xs text-gray-500 mt-1">Alert when total stock falls below this number</p>
               </div>
-            </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">QR Code</label>
-              <div className="flex space-x-2">
-                <input
-                  type="text"
-                  required
-                  value={formData.qrCode}
-                  onChange={(e) => setFormData({ ...formData, qrCode: e.target.value.toUpperCase() })}
-                  placeholder="Enter or generate QR code"
-                  className="flex-1 p-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-                <button
-                  type="button"
-                  onClick={generateQRCode}
-                  className="bg-gray-500 hover:bg-gray-600 text-white px-3 py-2 rounded-lg text-sm"
-                >
-                  Generate
-                </button>
-              </div>
-              <p className="text-xs text-gray-500 mt-1">Unique identifier for this product</p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
               <select
-                required
-                value={formData.category}
-                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+                value={localCategoryFilter}
+                onChange={(e) => handleCategoryFilterChange(e.target.value)}
               >
-                <option value="">Select a category...</option>
-                {categories.map(category => (
+                <option value="">All Categories</option>
+                {categories.map((category) => (
                   <option key={category._id} value={category._id}>
-                    {category.icon} {category.name}
+                    {category.name}
                   </option>
                 ))}
               </select>
-              {categoriesLoading && (
-                <p className="text-xs text-gray-500 mt-1">Loading categories...</p>
-              )}
-            </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Expiration Date <span className="text-gray-400 font-normal">(optional)</span>
-              </label>
-              <input
-                type="date"
-                value={formData.expirationDate}
-                onChange={(e) => setFormData({ ...formData, expirationDate: e.target.value })}
-                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-              <p className="text-xs text-gray-500 mt-1">Leave empty if product doesn't expire</p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-              <textarea
-                rows={3}
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div className="flex space-x-3 pt-4">
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-lg"
+              <select
+                className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+                value=""
+                onChange={() => {}}
               >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg disabled:opacity-50"
-              >
-                {isLoading ? 'Saving...' : product ? 'Update' : 'Create'}
-              </button>
+                <option value="">All Status</option>
+                <option value="in-stock">In Stock</option>
+                <option value="low-stock">Low Stock</option>
+                <option value="out-of-stock">Out of Stock</option>
+              </select>
+
+              <Button variant="outline" onClick={handleClearFilters}>
+                Clear Filters
+              </Button>
             </div>
-          </form>
+          </CardContent>
+        </Card>
+
+        {/* Products Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
+          {products.map((product) => {
+            const stockStatus = getStockStatus(product);
+            return (
+              <Card key={product._id} className="hover:shadow-lg transition-shadow">
+                <CardHeader className="pb-3">
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                      <CardTitle className="text-lg">{product.name}</CardTitle>
+                      <p className="text-sm text-gray-600">{product.categoryName}</p>
+                    </div>
+                    <Badge variant="secondary" className={stockStatus.color}>
+                      {stockStatus.status}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-600">Price:</span>
+                      <span className="font-semibold">₹{product.price}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-600">Stock:</span>
+                      <span className="font-semibold">{product.quantity}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-600">QR Code:</span>
+                      <span className="text-xs font-mono bg-gray-100 px-2 py-1 rounded">
+                        {product.qrCode?.slice(0, 8)}...
+                      </span>
+                    </div>
+                    {product.description && (
+                      <p className="text-sm text-gray-600 mt-2">
+                        {product.description.length > 60 
+                          ? product.description.substring(0, 60) + '...' 
+                          : product.description}
+                      </p>
+                    )}
+                  </div>
+                  
+                  <div className="flex gap-2 mt-4">
+                    <Button size="sm" variant="outline" onClick={() => handleEdit(product)}>
+                      <EditIcon className="w-3 h-3 mr-1" />
+                      Edit
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => handleDelete(product._id)}>
+                      <TrashIcon className="w-3 h-3 mr-1" />
+                      Delete
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-700">
+              Page {currentPage} of {totalPages}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {products.length === 0 && (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-center py-8">
+                <PackageIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-500">No products found</p>
+                <Button className="mt-4" onClick={() => setShowCreateForm(true)}>
+                  Add Your First Product
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

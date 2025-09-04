@@ -26,7 +26,16 @@ const activityLogSchema = new mongoose.Schema({
       'DELETE_CATEGORY',
       'STOCK_MOVEMENT',
       'STOCK_RECEIVED',
-      'STOCK_DELIVERED'
+      'STOCK_DELIVERED',
+      'PRICE_UPDATE',
+      'BATCH_UPDATE',
+  'PROMOTION_CREATED',
+  'PROMOTION_UPDATED',
+  // Additional actions used by category/stock endpoints
+  'VIEW_STOCK_SUMMARY',
+  'EXPORT_STOCK_SUMMARY',
+  'VIEW_CATEGORY_STOCK_SUMMARY',
+  'EXPORT_CATEGORY_INVENTORY'
     ]
   },
   productId: {
@@ -42,6 +51,17 @@ const activityLogSchema = new mongoose.Schema({
   },
   newValue: {
     type: Number // New quantity value
+  },
+  // Price change tracking
+  priceChange: {
+    previousPrice: { type: Number },
+    newPrice: { type: Number },
+    field: { type: String } // 'price', 'sellingPrice', etc.
+  },
+  // Structured metadata for different action types
+  metadata: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
   },
   details: {
     type: String, // Additional details about the action

@@ -29,9 +29,14 @@ const simpleUserRoutes = require('./routes/simple-users');
 const simpleProductRoutes = require('./routes/simple-products');
 const simpleAlertRoutes = require('./routes/simple-alerts');
 const businessRoutes = require('./routes/businesses');
+const shopRoutes = require('./routes/shops');
 const simpleAnalyticsRoutes = require('./routes/simple-analytics');
 const inventoryRoutes = require('./routes/inventory');
 const uploadRoutes = require('./routes/upload');
+const developerAnalyticsRoutes = require('./routes/developer-analytics');
+const developerRoutes = require('./routes/developer');
+const batchRoutes = require('./routes/batches');
+const promotionRoutes = require('./routes/promotions');
 
 const app = express();
 
@@ -48,11 +53,10 @@ app.use(limiter);
 
 // CORS configuration - Allow all origins for development
 app.use(cors({
-  origin: true, // Allow all origins
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'HEAD', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-  optionsSuccessStatus: 200
+  origin: '*' // Allow all origins
+  // methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'HEAD', 'PATCH'],
+  // allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  // optionsSuccessStatus: 200
 }));
 
 // Body parsing middleware
@@ -61,6 +65,10 @@ app.use(express.urlencoded({ extended: true }));
 
 // Logging middleware
 app.use(morgan('combined'));
+
+// Custom Request/Response Logger (configurable via .env)
+const requestLogger = require('./middleware/requestLogger');
+app.use(requestLogger);
 
 // Static files for uploads
 app.use('/uploads', express.static('uploads'));
@@ -100,9 +108,14 @@ app.use('/api/simple-users', simpleUserRoutes);
 app.use('/api/simple-products', simpleProductRoutes);
 app.use('/api/simple-alerts', simpleAlertRoutes);
 app.use('/api/simple-analytics', simpleAnalyticsRoutes);
-app.use('/api/businesses', businessRoutes);
+app.use('/api/shops', shopRoutes); // New shops endpoint  
+app.use('/api/businesses', shopRoutes); // Map businesses to shops for backward compatibility
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/batches', batchRoutes);
+app.use('/api/promotions', promotionRoutes);
+app.use('/api/dev-analytics', developerAnalyticsRoutes);
+app.use('/api/developer', developerRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -171,6 +184,18 @@ const startServer = async () => {
     console.log(`- Network: http://${networkIP}:${PORT}`);
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   });
+
+  // Schedule expiry job: run once on startup and then every 24 hours.
+  try {
+    const { scheduleDaily, executeExpiryJob } = require('./services/expiryRunner');
+    // Run once immediately (non-blocking)
+    executeExpiryJob().catch(err => console.error('Expiry job error:', err));
+    // Schedule with node-cron default 02:00 daily
+    scheduleDaily();
+    console.log('Expiry job scheduled (daily at 02:00)');
+  } catch (err) {
+    console.error('Could not schedule expiry job:', err);
+  }
 };
 
 startServer();

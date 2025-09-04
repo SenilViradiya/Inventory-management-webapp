@@ -106,3 +106,18 @@ This will show:
 - ✅ Connection status
 - ✅ Database name and host information
 - 💡 Troubleshooting tips if connection fails
+
+## migrateCategoryField.js
+
+Backfills `categoryId` and `categoryName` on existing Product documents. By default the script performs writes. For a dry run set environment variable DRY_RUN=1 to only print planned updates.
+
+Usage:
+
+	cd backend
+	# dry run
+	DRY_RUN=1 node scripts/migrateCategoryField.js
+
+	# apply changes
+	node scripts/migrateCategoryField.js
+
+Make a backup of your DB before running in production.

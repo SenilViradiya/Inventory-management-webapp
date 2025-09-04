@@ -3,22 +3,28 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useRouter } from 'next/navigation';
+import Cookies from 'js-cookie';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [hasRedirected, setHasRedirected] = useState(false);
-  const { login, isAuthenticated, isLoading: authLoading } = useAuth();
+  const { login, isAuthenticated, isLoading: authLoading, user } = useAuth();
   const router = useRouter();
 
   // Better redirect logic with loading check
   useEffect(() => {
     if (!authLoading && isAuthenticated && !hasRedirected) {
       setHasRedirected(true);
-      router.replace('/dashboard');
+      // Redirect developer or superadmin to /developer page
+      if (user && (user.username === 'developer' || user.role === 'superadmin')) {
+        router.replace('/developer');
+      } else {
+        router.replace('/dashboard');
+      }
     }
-  }, [isAuthenticated, authLoading, router, hasRedirected]);
+  }, [isAuthenticated, authLoading, router, hasRedirected, user]);
 
   // Show loading while auth is being checked
   if (authLoading) {

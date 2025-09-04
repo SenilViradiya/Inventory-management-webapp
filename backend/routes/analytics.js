@@ -2,7 +2,10 @@ const express = require('express');
 const router = express.Router();
 const Product = require('../models/Product');
 const ActivityLog = require('../models/ActivityLog');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireRole } = require('../middleware/auth');
+const { Parser } = require('json2csv');
+const PDFDocument = require('pdfkit');
+const analyticsService = require('../services/analyticsService');
 
 // GET /api/analytics/today-sales - Get today's sales data
 router.get('/today-sales', authenticateToken, async (req, res) => {
@@ -143,6 +146,363 @@ router.get('/today-sales', authenticateToken, async (req, res) => {
   }
 });
 
+// GET /api/analytics/detail - Detailed analytics for a range (stock added, movements, sales, price changes, promo impact)
+router.get('/detail', authenticateToken, requireRole('admin'), async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const start = startDate ? new Date(startDate) : new Date(new Date().setHours(0,0,0,0));
+    const end = endDate ? new Date(endDate) : new Date();
+
+    console.log(`Analytics Detail Query - Start: ${start.toISOString()}, End: ${end.toISOString()}`);
+
+    // Stock Added - Look for INCREASE_STOCK, CREATE_PRODUCT activities
+    const stockAdded = await ActivityLog.aggregate([
+      {
+        $match: {
+          action: { $in: ['INCREASE_STOCK', 'CREATE_PRODUCT'] },
+          createdAt: { $gte: start, $lte: end }
+        }
+      },
+      {
+        $lookup: {
+          from: 'products',
+          localField: 'productId', 
+          foreignField: '_id',
+          as: 'product'
+        }
+      },
+      {
+        $unwind: { path: '$product', preserveNullAndEmptyArrays: true }
+      },
+      {
+        $group: {
+          _id: null,
+          totalQty: { $sum: { $abs: '$change' } },
+          totalCost: { $sum: { $multiply: [{ $abs: '$change' }, { $ifNull: ['$product.price', 0] }] } },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Stock Movements Summary - All movement types
+    const movements = await ActivityLog.aggregate([
+      {
+        $match: {
+          action: { $in: ['STOCK_MOVEMENT', 'REDUCE_STOCK', 'INCREASE_STOCK'] },
+          createdAt: { $gte: start, $lte: end }
+        }
+      },
+      {
+        $addFields: {
+          movementType: {
+            $switch: {
+              branches: [
+                { case: { $eq: ['$action', 'INCREASE_STOCK'] }, then: 'store_in' },
+                { case: { $eq: ['$action', 'REDUCE_STOCK'] }, then: 'store_out' },
+                { case: { $and: [{ $eq: ['$action', 'STOCK_MOVEMENT'] }, { $gt: ['$change', 0] }] }, then: 'store_in' },
+                { case: { $and: [{ $eq: ['$action', 'STOCK_MOVEMENT'] }, { $lt: ['$change', 0] }] }, then: 'store_out' }
+              ],
+              default: 'store_out'
+            }
+          }
+        }
+      },
+      {
+        $lookup: {
+          from: 'products',
+          localField: 'productId',
+          foreignField: '_id', 
+          as: 'product'
+        }
+      },
+      {
+        $unwind: { path: '$product', preserveNullAndEmptyArrays: true }
+      },
+      {
+        $group: {
+          _id: '$movementType',
+          count: { $sum: 1 },
+          totalQty: { $sum: { $abs: '$change' } },
+          totalValue: { $sum: { $multiply: [{ $abs: '$change' }, { $ifNull: ['$product.price', 0] }] } }
+        }
+      }
+    ]);
+
+    // Sales Summary - Focus on stock reductions (sales)
+    const sales = await ActivityLog.aggregate([
+      {
+        $match: {
+          $or: [
+            { action: 'REDUCE_STOCK', createdAt: { $gte: start, $lte: end } },
+            { action: 'STOCK_MOVEMENT', change: { $lt: 0 }, createdAt: { $gte: start, $lte: end } }
+          ]
+        }
+      },
+      {
+        $lookup: {
+          from: 'products',
+          localField: 'productId',
+          foreignField: '_id',
+          as: 'product'
+        }
+      },
+      {
+        $unwind: { path: '$product', preserveNullAndEmptyArrays: true }
+      },
+      {
+        $addFields: {
+          quantitySold: {
+            $cond: {
+              if: { $eq: ['$action', 'REDUCE_STOCK'] },
+              then: {
+                $cond: {
+                  if: { $and: [{ $ne: ['$quantityBefore', null] }, { $ne: ['$quantityAfter', null] }] },
+                  then: { $subtract: ['$quantityBefore', '$quantityAfter'] },
+                  else: 1 // Default to 1 for REDUCE_STOCK if no quantity data
+                }
+              },
+              else: { $abs: '$change' }
+            }
+          }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalQty: { $sum: '$quantitySold' },
+          revenue: { $sum: { $multiply: ['$quantitySold', { $ifNull: ['$product.price', 0] }] } },
+          cost: { $sum: { $multiply: ['$quantitySold', { $ifNull: ['$product.costPrice', '$product.price'] }] } },
+          transactions: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Price Changes
+    const priceChanges = await ActivityLog.aggregate([
+      {
+        $match: {
+          action: 'UPDATE_PRODUCT',
+          createdAt: { $gte: start, $lte: end },
+          'details.oldPrice': { $exists: true },
+          'details.newPrice': { $exists: true }
+        }
+      },
+      {
+        $lookup: {
+          from: 'products',
+          localField: 'productId',
+          foreignField: '_id',
+          as: 'product'
+        }
+      },
+      {
+        $unwind: { path: '$product', preserveNullAndEmptyArrays: true }
+      },
+      {
+        $addFields: {
+          priceIncrease: { $subtract: ['$details.newPrice', '$details.oldPrice'] },
+          percentChange: {
+            $cond: {
+              if: { $gt: ['$details.oldPrice', 0] },
+              then: { $multiply: [{ $divide: [{ $subtract: ['$details.newPrice', '$details.oldPrice'] }, '$details.oldPrice'] }, 100] },
+              else: 0
+            }
+          }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          count: { $sum: 1 },
+          entries: {
+            $push: {
+              productName: '$product.name',
+              oldPrice: '$details.oldPrice',
+              newPrice: '$details.newPrice',
+              priceIncrease: '$priceIncrease',
+              percentChange: '$percentChange',
+              createdAt: '$createdAt'
+            }
+          }
+        }
+      },
+      {
+        $project: {
+          count: 1,
+          entries: { $slice: ['$entries', 10] } // Limit to 10 recent entries
+        }
+      }
+    ]);
+
+    // Promotion Impact - Compare regular vs discounted sales
+    const promoImpact = await ActivityLog.aggregate([
+      {
+        $match: {
+          $or: [
+            { action: 'REDUCE_STOCK', createdAt: { $gte: start, $lte: end } },
+            { action: 'STOCK_MOVEMENT', change: { $lt: 0 }, createdAt: { $gte: start, $lte: end } }
+          ]
+        }
+      },
+      {
+        $lookup: {
+          from: 'products',
+          localField: 'productId',
+          foreignField: '_id',
+          as: 'product'
+        }
+      },
+      {
+        $unwind: { path: '$product', preserveNullAndEmptyArrays: true }
+      },
+      {
+        $addFields: {
+          quantitySold: {
+            $cond: {
+              if: { $eq: ['$action', 'REDUCE_STOCK'] },
+              then: 1,
+              else: { $abs: '$change' }
+            }
+          },
+          isPromo: {
+            $cond: {
+              if: { $and: ['$details.salePrice', { $lt: ['$details.salePrice', '$product.price'] }] },
+              then: true,
+              else: false
+            }
+          },
+          saleValue: {
+            $multiply: [
+              {
+                $cond: {
+                  if: { $eq: ['$action', 'REDUCE_STOCK'] },
+                  then: 1,
+                  else: { $abs: '$change' }
+                }
+              },
+              { $ifNull: ['$details.salePrice', '$product.price', 0] }
+            ]
+          }
+        }
+      },
+      {
+        $group: {
+          _id: '$isPromo',
+          quantity: { $sum: '$quantitySold' },
+          revenue: { $sum: '$saleValue' }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          promoQty: { $sum: { $cond: [{ $eq: ['$_id', true] }, '$quantity', 0] } },
+          promoRevenue: { $sum: { $cond: [{ $eq: ['$_id', true] }, '$revenue', 0] } },
+          normalQty: { $sum: { $cond: [{ $eq: ['$_id', false] }, '$quantity', 0] } },
+          normalRevenue: { $sum: { $cond: [{ $eq: ['$_id', false] }, '$revenue', 0] } }
+        }
+      }
+    ]);
+
+    const result = {
+      start: start.toISOString(),
+      end: end.toISOString(), 
+      stockAdded: stockAdded[0] || { totalQty: 0, totalCost: 0, count: 0 },
+      movements: movements,
+      sales: sales[0] || { totalQty: 0, revenue: 0, cost: 0, transactions: 0 },
+      priceChanges: priceChanges[0] || { count: 0, entries: [] },
+      promoImpact: promoImpact[0] || { promoQty: 0, promoRevenue: 0, normalQty: 0, normalRevenue: 0 }
+    };
+
+    console.log('Analytics Result:', JSON.stringify(result, null, 2));
+    res.json(result);
+  } catch (err) {
+    console.error('Error fetching detailed analytics:', err);
+    res.status(500).json({ message: 'Error fetching detailed analytics', error: err.message });
+  }
+});
+
+// GET /api/analytics/detail/export - Export detailed analytics as CSV or PDF
+router.get('/detail/export', authenticateToken, requireRole('admin'), async (req, res) => {
+  try {
+    const { startDate, endDate, format = 'csv' } = req.query;
+    const start = startDate ? new Date(startDate) : new Date(new Date().setHours(0,0,0,0));
+    const end = endDate ? new Date(endDate) : new Date();
+
+    const stockAdded = await analyticsService.getStockAdded({ start, end });
+    const movements = await analyticsService.getStockMovementsSummary({ start, end });
+    const sales = await analyticsService.getSalesSummary({ start, end });
+    const priceChanges = await analyticsService.getPriceChanges({ start, end });
+    const promoImpact = await analyticsService.getPromotionImpact({ start, end });
+
+    const profit = sales.revenue - sales.cost;
+    const profitMargin = sales.revenue > 0 ? (profit / sales.revenue * 100).toFixed(2) : 0;
+
+    if (format === 'pdf') {
+      const doc = new PDFDocument({ margin: 50 });
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="analytics_${start.toISOString().split('T')[0]}_${end.toISOString().split('T')[0]}.pdf"`);
+      doc.pipe(res);
+
+      doc.fontSize(20).text('Detailed Analytics Report', 50, 50);
+      doc.fontSize(12).text(`Period: ${start.toISOString().split('T')[0]} to ${end.toISOString().split('T')[0]}`, 50, 80);
+
+      let yPos = 120;
+      doc.text(`Stock Added: ${stockAdded.totalQty} units, $${stockAdded.totalCost.toFixed(2)} cost`, 50, yPos);
+      yPos += 20;
+      doc.text(`Sales: ${sales.totalQty} units, $${sales.revenue.toFixed(2)} revenue, $${sales.cost.toFixed(2)} cost`, 50, yPos);
+      yPos += 20;
+      doc.text(`Profit: $${profit.toFixed(2)} (${profitMargin}% margin)`, 50, yPos);
+      yPos += 20;
+      doc.text(`Price Changes: ${priceChanges.count} updates`, 50, yPos);
+      yPos += 20;
+      doc.text(`Promotions: ${promoImpact.promoQty} promo units, ${promoImpact.normalQty} normal units`, 50, yPos);
+
+      doc.end();
+    } else {
+      // CSV format
+      const csvData = [
+        {
+          metric: 'Stock Added Quantity',
+          value: stockAdded.totalQty,
+          cost: stockAdded.totalCost.toFixed(2),
+          count: stockAdded.count
+        },
+        {
+          metric: 'Sales Quantity',
+          value: sales.totalQty,
+          cost: sales.cost.toFixed(2),
+          revenue: sales.revenue.toFixed(2)
+        },
+        {
+          metric: 'Profit',
+          value: profit.toFixed(2),
+          margin: `${profitMargin}%`,
+          transactions: sales.transactions
+        },
+        {
+          metric: 'Price Changes',
+          value: priceChanges.count,
+          details: `${priceChanges.entries.filter(e => e.priceIncrease > 0).length} increases`
+        },
+        {
+          metric: 'Promotional Sales',
+          value: promoImpact.promoQty,
+          revenue: promoImpact.promoRevenue.toFixed(2)
+        }
+      ];
+
+      const fields = ['metric', 'value', 'cost', 'revenue', 'margin', 'count', 'transactions', 'details'];
+      const csv = new Parser({ fields }).parse(csvData);
+      
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="analytics_${start.toISOString().split('T')[0]}_${end.toISOString().split('T')[0]}.csv"`);
+      res.send(csv);
+    }
+  } catch (err) {
+    res.status(500).json({ message: 'Error exporting detailed analytics', error: err.message });
+  }
+});
+
 // GET /api/analytics/dashboard - Get dashboard analytics
 router.get('/dashboard', authenticateToken, async (req, res) => {
   try {
@@ -172,9 +532,10 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
       return await ActivityLog.aggregate([
         {
           $match: {
-            action: { $in: ['REDUCE_STOCK', 'BULK_REDUCTION'] },
-            reversed: false,
-            createdAt: { $gte: startDate, $lte: endDate }
+            $or: [
+              { action: 'REDUCE_STOCK', createdAt: { $gte: startDate, $lte: endDate } },
+              { action: 'STOCK_MOVEMENT', change: { $lt: 0 }, createdAt: { $gte: startDate, $lte: endDate } }
+            ]
           }
         },
         {
@@ -186,13 +547,30 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
           }
         },
         {
-          $unwind: '$product'
+          $unwind: { path: '$product', preserveNullAndEmptyArrays: true }
+        },
+        {
+          $addFields: {
+            quantitySold: {
+              $cond: {
+                if: { $eq: ['$action', 'REDUCE_STOCK'] },
+                then: {
+                  $cond: {
+                    if: { $and: [{ $ne: ['$quantityBefore', null] }, { $ne: ['$quantityAfter', null] }] },
+                    then: { $subtract: ['$quantityBefore', '$quantityAfter'] },
+                    else: 1 // Default to 1 for REDUCE_STOCK activities
+                  }
+                },
+                else: { $abs: '$change' }
+              }
+            }
+          }
         },
         {
           $group: {
             _id: null,
-            totalQuantitySold: { $sum: { $abs: '$change' } },
-            totalSalesValue: { $sum: { $multiply: [{ $abs: '$change' }, '$product.price'] } },
+            totalQuantitySold: { $sum: '$quantitySold' },
+            totalSalesValue: { $sum: { $multiply: ['$quantitySold', { $ifNull: ['$product.price', 0] }] } },
             transactions: { $sum: 1 }
           }
         }
@@ -210,9 +588,10 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
     const categorySales = await ActivityLog.aggregate([
       {
         $match: {
-          action: { $in: ['REDUCE_STOCK', 'BULK_REDUCTION'] },
-          reversed: false,
-          createdAt: { $gte: startOfMonth }
+          $or: [
+            { action: 'REDUCE_STOCK', createdAt: { $gte: startOfMonth } },
+            { action: 'STOCK_MOVEMENT', change: { $lt: 0 }, createdAt: { $gte: startOfMonth } }
+          ]
         }
       },
       {
@@ -224,13 +603,27 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
         }
       },
       {
-        $unwind: '$product'
+        $unwind: { path: '$product', preserveNullAndEmptyArrays: true }
+      },
+      {
+        $addFields: {
+          quantitySold: {
+            $cond: {
+              if: { $eq: ['$action', 'REDUCE_STOCK'] },
+              then: 1,
+              else: { $abs: '$change' }
+            }
+          },
+          categoryName: {
+            $ifNull: ['$product.categoryName', '$product.category', 'Uncategorized']
+          }
+        }
       },
       {
         $group: {
-          _id: '$product.category',
-          quantitySold: { $sum: { $abs: '$change' } },
-          salesValue: { $sum: { $multiply: [{ $abs: '$change' }, '$product.price'] } }
+          _id: '$categoryName',
+          quantitySold: { $sum: '$quantitySold' },
+          salesValue: { $sum: { $multiply: ['$quantitySold', { $ifNull: ['$product.price', 0] }] } }
         }
       },
       {
@@ -242,15 +635,27 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
     const topProducts = await ActivityLog.aggregate([
       {
         $match: {
-          action: { $in: ['REDUCE_STOCK', 'BULK_REDUCTION'] },
-          reversed: false,
-          createdAt: { $gte: startOfMonth }
+          $or: [
+            { action: 'REDUCE_STOCK', createdAt: { $gte: startOfMonth } },
+            { action: 'STOCK_MOVEMENT', change: { $lt: 0 }, createdAt: { $gte: startOfMonth } }
+          ]
+        }
+      },
+      {
+        $addFields: {
+          quantitySold: {
+            $cond: {
+              if: { $eq: ['$action', 'REDUCE_STOCK'] },
+              then: 1,
+              else: { $abs: '$change' }
+            }
+          }
         }
       },
       {
         $group: {
           _id: '$productId',
-          quantitySold: { $sum: { $abs: '$change' } },
+          quantitySold: { $sum: '$quantitySold' },
           transactions: { $sum: 1 }
         }
       },
@@ -263,11 +668,11 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
         }
       },
       {
-        $unwind: '$product'
+        $unwind: { path: '$product', preserveNullAndEmptyArrays: true }
       },
       {
         $addFields: {
-          salesValue: { $multiply: ['$quantitySold', '$product.price'] }
+          salesValue: { $multiply: ['$quantitySold', { $ifNull: ['$product.price', 0] }] }
         }
       },
       {
@@ -529,3 +934,4 @@ router.get('/category-performance', authenticateToken, async (req, res) => {
 });
 
 module.exports = router;
+

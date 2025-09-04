@@ -2,6 +2,7 @@ import './globals.css'
 import { Inter } from 'next/font/google'
 import { Providers } from './providers'
 import { Toaster } from 'react-hot-toast'
+import Navigation from '../components/Navigation'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -36,9 +37,12 @@ export default function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="theme-color" content="#3b82f6" />
       </head>
-      <body className={inter.className}>
+            <body className={inter.className}>
         <Providers>
-          {children}
+          <Navigation />
+          <main className="min-h-screen">
+            {children}
+          </main>
           <Toaster
             position="top-right"
             toastOptions={{

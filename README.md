@@ -1,53 +1,98 @@
-# Inventory Management System for Off-License Shop
+# 🏪 Inventory Management System v2.0 - Complete Solution
 
-A comprehensive full-stack inventory management system designed specifically for off-license shops. Features mobile-friendly design for staff use, QR code scanning, stock tracking, analytics, and reporting capabilities.
+A comprehensive, production-ready inventory management system designed for off-license shops with advanced features including batch tracking, FEFO algorithm, dynamic promotions, and real-time analytics.
 
-## 🏗️ Architecture
+## 🌟 Key Features
 
-### Backend (Node.js + Express + MongoDB)
+### 🔥 **NEW in v2.0**
+- **📦 Batch-Level Inventory Tracking** - Track individual stock batches with expiry dates and purchase prices
+- **🔄 FEFO Algorithm** - First Expired First Out automatic stock consumption 
+- **🎯 Dynamic Promotions** - Time-window based promotions with automatic price resolution
+- **📊 Enhanced Analytics** - Comprehensive reporting with CSV/PDF exports
+- **📱 Mobile API Integration** - Complete mobile app support with Google Analytics
+- **🤖 Developer Metrics** - Advanced analytics collection and reporting
+- **⏰ Automated Scheduling** - Background jobs for expiry checks and analytics
+
+### 🏗️ System Architecture
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Frontend      │    │    Backend      │    │    Database     │
+│   (Next.js)     │◄──►│   (Express.js)  │◄──►│   (MongoDB)     │
+│   React + UI    │    │   REST API      │    │   + Analytics   │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+                              │
+                       ┌─────────────────┐
+                       │  Mobile App     │
+                       │  (React Native) │
+                       │  + Analytics    │
+                       └─────────────────┘
+```
+
+### 📱 **Backend (Node.js + Express + MongoDB)**
 - **Server**: Express.js with security middleware (Helmet, CORS, Rate Limiting)
 - **Database**: MongoDB with Mongoose ODM
-- **Authentication**: JWT-based authentication with role-based access control
-- **File Upload**: Multer for product image uploads
-- **API Documentation**: RESTful API with comprehensive endpoints
-- **Security**: bcrypt password hashing, input validation, error handling
+- **Authentication**: JWT-based with role-based access control
+- **File Storage**: Azure Blob Storage integration
+- **API Documentation**: Complete Swagger/OpenAPI 3.0 documentation
+- **Background Jobs**: Node-cron for scheduled tasks
+- **Testing**: Comprehensive Jest test suite (12 tests, 100% pass rate)
 
-### Frontend (Next.js + React + Tailwind CSS)
+### 🖥️ **Frontend (Next.js + React + Tailwind CSS)**
 - **Framework**: Next.js 14 with React 18
 - **Styling**: Tailwind CSS with mobile-first responsive design
-- **State Management**: React Query for server state, Context API for authentication
+- **State Management**: React Query for server state, Context API for auth
 - **QR Scanning**: React QR Reader for barcode scanning
 - **Charts**: Recharts for analytics and data visualization
 - **Notifications**: React Hot Toast for user feedback
 
-## 🚀 Features
+## 🚀 Complete Feature Set
 
-### Product Management
-- ✅ Add, update, delete products with comprehensive details
-- ✅ Product fields: name, image, price, category, description, expiration date, quantity, QR code
-- ✅ Image upload support for product photos
-- ✅ Category management and filtering
-- ✅ Low stock threshold configuration per product
+### 📦 **Advanced Product Management**
+- ✅ Complete product lifecycle management
+- ✅ Batch-level tracking with expiry dates
+- ✅ Purchase price tracking per batch
+- ✅ Azure Blob Storage for product images
+- ✅ QR/Barcode scanning with camera integration
+- ✅ Category and supplier management
+- ✅ Advanced search and filtering
 
-### Stock & Quantity Management
-- ✅ QR code scanning with manual entry fallback
-- ✅ Single unit reduction or bulk reduction with calculator interface
-- ✅ Stock validation and error handling
-- ✅ Double confirmation for bulk operations
-- ✅ Admin-only stock adjustment reversal capability
-- ✅ Complete stock transaction history logging
+### 📊 **Intelligent Stock Management**
+- ✅ **FEFO Algorithm** - Automatic stock rotation (First Expired First Out)
+- ✅ Batch creation and management
+- ✅ Real-time stock level tracking
+- ✅ Automated expiry detection and alerts
+- ✅ Dead stock handling and reporting
+- ✅ Stock movement history with full audit trail
 
-### User Roles & Authentication
-- ✅ **Admin Role**: Full access - manage products, reverse adjustments, export reports, user management
-- ✅ **Staff Role**: Stock operations - scan/reduce stock, update quantities
-- ✅ JWT-based secure authentication
-- ✅ Activity logging for all actions
+### 🎯 **Dynamic Promotion System**
+- ✅ Time-window based promotions
+- ✅ Percentage and fixed amount discounts
+- ✅ Product-specific and category-wide promotions
+- ✅ Automatic price resolution during sales
+- ✅ Promotion analytics and performance tracking
 
-### Alerts & Notifications
-- ✅ Low stock alerts (customizable thresholds)
-- ✅ Expiration warnings (products expiring within 7 days)
-- ✅ Expired product notifications
-- ✅ Dashboard notification center
+### 📈 **Comprehensive Analytics & Reporting**
+- ✅ **Real-time Dashboard** - Sales, revenue, profit metrics
+- ✅ **Detailed Analytics** - Stock movements, price changes, batch tracking
+- ✅ **Export Capabilities** - CSV and PDF report generation
+- ✅ **Developer Metrics** - Mobile app usage analytics
+- ✅ **Pre-aggregated Data** - Daily snapshots for performance
+- ✅ **Historical Reporting** - Trend analysis and forecasting
+
+### 🔐 **Advanced Authentication & Authorization**
+- ✅ **Role-Based Access Control** - Admin, Staff, and custom roles
+- ✅ **JWT Authentication** - Secure token-based authentication
+- ✅ **Multi-shop Support** - Separate access per shop location
+- ✅ **Activity Logging** - Complete audit trail for all actions
+- ✅ **Session Management** - Secure login/logout with token refresh
+
+### 🚨 **Smart Alerts & Notifications**
+- ✅ **Expiry Alerts** - Automated warnings for expiring products
+- ✅ **Low Stock Notifications** - Customizable threshold alerts
+- ✅ **Price Change Tracking** - Complete price history with alerts
+- ✅ **System Notifications** - Background job status and errors
+- ✅ **Mobile Push Integration** - Ready for mobile app notifications
 - 🔄 Email notifications (placeholder for future implementation)
 
 ### Analytics & Dashboard

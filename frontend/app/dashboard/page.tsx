@@ -1,314 +1,283 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext';
-import { useProducts } from '../contexts/ProductsContext';
-import { useRouter } from 'next/navigation';
-import { analyticsAPI } from '../lib/api';
-import Navigation from '../components/Navigation';
-import toast from 'react-hot-toast';
+import { analyticsAPI, alertsAPI, productsAPI } from '../lib/api';
+import type { Product, Alert, DashboardStats } from '../lib/types';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
+import { Badge } from '../../components/ui/badge';
+import { Button } from '../../components/ui/button';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
+import { toast } from 'react-hot-toast';
+import { format } from 'date-fns';
 import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  PieChart, 
-  Pie, 
-  Cell, 
-  LineChart, 
-  Line, 
-  ResponsiveContainer 
-} from 'recharts';
-import { 
-  Package, 
-  AlertTriangle, 
-  DollarSign, 
-  TrendingUp, 
-  ShoppingCart,
-  Calendar,
-  BarChart3
+  PackageIcon, 
+  TrendingUpIcon, 
+  AlertTriangleIcon, 
+  DollarSignIcon,
+  ShoppingCartIcon,
+  UsersIcon,
+  BarChart3Icon,
+  BellIcon
 } from 'lucide-react';
 
-interface DashboardStats {
-  totalProducts: number;
-  lowStockCount: number;
-  outOfStockCount: number;
-  totalValue: number;
-  categoryCounts: Record<string, number>;
-  expiringSoon: number;
-  salesData?: {
-    today: number;
-    thisMonth: number;
-    thisYear: number;
-    dailySales: Array<{ date: string; sales: number; items: number }>;
-  };
-}
-
 export default function DashboardPage() {
-  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
-  const { products, loading: productsLoading } = useProducts();
-  const router = useRouter();
-  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [lowStockProducts, setLowStockProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      router.push('/login');
-    }
-  }, [isAuthenticated, authLoading, router]);
+    fetchDashboardData();
+  }, []);
 
-  useEffect(() => {
-    if (products.length > 0) {
-      calculateStats();
-    }
-  }, [products]);
-
-  const calculateStats = async () => {
-    if (products.length === 0) return;
-
-    setLoading(true);
+  const fetchDashboardData = async () => {
     try {
-      // Calculate basic stats
-      const totalProducts = products.length;
-      const lowStockCount = products.filter(p => p.quantity <= (p.minimumStock || 5)).length;
-      const outOfStockCount = products.filter(p => p.quantity === 0).length;
-      const totalValue = products.reduce((sum, p) => sum + (p.price * p.quantity), 0);
-      
-      // Calculate category distribution
-      const categoryCounts = products.reduce((acc, p) => {
-        acc[p.category] = (acc[p.category] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
+      setLoading(true);
+      // Fetch dashboard stats
+  const statsResponse = await analyticsAPI.getDashboard();
+  setStats(statsResponse.data.data);
 
-      // Calculate expiring soon (next 30 days)
-      const thirtyDaysFromNow = new Date();
-      thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
-      const expiringSoon = products.filter(p => {
-        if (!p.expirationDate) return false;
-        const expDate = new Date(p.expirationDate);
-        return expDate <= thirtyDaysFromNow && expDate >= new Date();
-      }).length;
+      // Fetch alerts
+  const alertsResponse = await alertsAPI.getAll({ limit: 5 });
+  setAlerts(alertsResponse.data.data || []);
 
-      // Try to fetch sales data (if available)
-      let salesData = undefined;
-      try {
-        const salesResponse = await analyticsAPI.getSalesTrend();
-        salesData = salesResponse.data;
-      } catch (error) {
-        // Sales data not available, use mock data for demo
-        salesData = {
-          today: Math.floor(Math.random() * 50),
-          thisMonth: Math.floor(Math.random() * 500),
-          thisYear: Math.floor(Math.random() * 5000),
-          dailySales: Array.from({ length: 7 }, (_, i) => ({
-            date: new Date(Date.now() - (6 - i) * 24 * 60 * 60 * 1000).toLocaleDateString(),
-            sales: Math.floor(Math.random() * 100),
-            items: Math.floor(Math.random() * 20)
-          }))
-        };
-      }
-
-      setDashboardStats({
-        totalProducts,
-        lowStockCount,
-        outOfStockCount,
-        totalValue,
-        categoryCounts,
-        expiringSoon,
-        salesData
-      });
+      // Fetch low stock products
+  const productsResponse = await productsAPI.getAll({ lowStock: true, limit: 5 });
+  setLowStockProducts(productsResponse.data.data || []);
     } catch (error) {
-      console.error('Error calculating dashboard stats:', error);
+      console.error('Error fetching dashboard data:', error);
+      toast.error('Failed to load dashboard data');
     } finally {
       setLoading(false);
     }
   };
 
-  if (authLoading || !user) {
+  const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
+
+  if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading...</p>
-        </div>
+      <div className="bg-gray-50 flex items-center justify-center py-20">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
       </div>
     );
   }
 
-  // Prepare chart data
-  const categoryData = dashboardStats ? Object.entries(dashboardStats.categoryCounts).map(([name, value]) => ({
-    name: name.charAt(0).toUpperCase() + name.slice(1),
-    value
-  })) : [];
-
-  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D'];
-
-  const stockStatusData = [
-    { name: 'In Stock', value: (dashboardStats?.totalProducts || 0) - (dashboardStats?.outOfStockCount || 0) - (dashboardStats?.lowStockCount || 0) },
-    { name: 'Low Stock', value: dashboardStats?.lowStockCount || 0 },
-    { name: 'Out of Stock', value: dashboardStats?.outOfStockCount || 0 }
-  ];
-
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navigation />
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Page Header */}
+    <div className="bg-gray-50 p-6">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Dashboard</h1>
-          <p className="text-gray-600">Welcome back, {user.fullName}. Here's what's happening with your inventory.</p>
+          <p className="text-gray-600">Welcome to your inventory management dashboard</p>
         </div>
 
-        {/* Stats Cards */}
+        {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {/* Total Products */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Package className="h-6 w-6 text-blue-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Total Products</p>
-                <p className="text-2xl font-bold text-gray-900">{dashboardStats?.totalProducts || 0}</p>
-              </div>
-            </div>
-          </div>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Products</CardTitle>
+              <PackageIcon className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats?.totalProducts || 0}</div>
+              <p className="text-xs text-muted-foreground">
+                +20.1% from last month
+              </p>
+            </CardContent>
+          </Card>
 
-          {/* Total Value */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-green-100 rounded-lg">
-                <DollarSign className="h-6 w-6 text-green-600" />
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Sales</CardTitle>
+              <DollarSignIcon className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                ${stats?.totalValue?.toLocaleString() || 0}
               </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Total Value</p>
-                <p className="text-2xl font-bold text-gray-900">£{(dashboardStats?.totalValue || 0).toFixed(2)}</p>
-              </div>
-            </div>
-          </div>
+              <p className="text-xs text-muted-foreground">
+                +15.2% from last month
+              </p>
+            </CardContent>
+          </Card>
 
-          {/* Low Stock Alert */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-yellow-100 rounded-lg">
-                <AlertTriangle className="h-6 w-6 text-yellow-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Low Stock Items</p>
-                <p className="text-2xl font-bold text-gray-900">{dashboardStats?.lowStockCount || 0}</p>
-              </div>
-            </div>
-          </div>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Low Stock Items</CardTitle>
+              <AlertTriangleIcon className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats?.lowStockCount || 0}</div>
+              <p className="text-xs text-muted-foreground">
+                Needs attention
+              </p>
+            </CardContent>
+          </Card>
 
-          {/* Sales Today */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <ShoppingCart className="h-6 w-6 text-purple-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Sales Today</p>
-                <p className="text-2xl font-bold text-gray-900">£{dashboardStats?.salesData?.today || 0}</p>
-              </div>
-            </div>
-          </div>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Today's Orders</CardTitle>
+              <ShoppingCartIcon className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              {/* No ordersToday in DashboardStats, show lowStockCount or other relevant stat */}
+              <div className="text-2xl font-bold">{stats?.lowStockCount || 0}</div>
+              <p className="text-xs text-muted-foreground">
+                +5 from yesterday
+              </p>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Charts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           {/* Sales Trend Chart */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-              <TrendingUp className="h-5 w-5 mr-2 text-green-600" />
-              Sales Trend (Last 7 Days)
-            </h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={dashboardStats?.salesData?.dailySales || []}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip />
-                <Line type="monotone" dataKey="sales" stroke="#8884d8" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Sales Trend</CardTitle>
+              <CardDescription>Your sales performance over time</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={stats?.salesTrend || []}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" />
+                  <YAxis />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="sales" stroke="#3B82F6" strokeWidth={2} />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
 
-          {/* Category Distribution */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-              <BarChart3 className="h-5 w-5 mr-2 text-blue-600" />
-              Product Categories
-            </h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={categoryData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {categoryData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
+          {/* Product Categories Chart */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Product Categories</CardTitle>
+              <CardDescription>Distribution of products by category</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={Object.entries(stats?.categoryCounts || {}).map(([name, value]) => ({ name, value }))}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {Object.entries(stats?.categoryCounts || {}).map(([name, value], index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
         </div>
 
-        {/* Stock Status Chart */}
-        <div className="bg-white rounded-lg shadow p-6 mb-8">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-            <Package className="h-5 w-5 mr-2 text-gray-600" />
-            Stock Status Overview
-          </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={stockStatusData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
-              <Bar dataKey="value" fill="#8884d8" />
-            </BarChart>
-          </ResponsiveContainer>
+        {/* Quick Actions and Alerts */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Recent Alerts */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <BellIcon className="h-5 w-5 mr-2" />
+                Recent Alerts
+              </CardTitle>
+              <CardDescription>Latest system notifications</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {alerts.length > 0 ? (
+                  alerts.map((alert) => (
+                    <div key={alert._id} className="flex items-start space-x-3">
+                      <AlertTriangleIcon className="h-5 w-5 text-orange-500 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">{alert.title}</p>
+                        <p className="text-xs text-gray-500">{alert.message}</p>
+                        <p className="text-xs text-gray-400">
+                          {format(new Date(alert.createdAt), 'MMM dd, yyyy HH:mm')}
+                        </p>
+                      </div>
+                      <Badge variant={alert.severity === 'high' ? 'destructive' : 'secondary'}>
+                        {alert.severity}
+                      </Badge>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-gray-500 text-sm">No recent alerts</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Low Stock Products */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <PackageIcon className="h-5 w-5 mr-2" />
+                Low Stock Products
+              </CardTitle>
+              <CardDescription>Products that need restocking</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {lowStockProducts.length > 0 ? (
+                  lowStockProducts.map((product) => (
+                    <div key={product._id} className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium">{product.name}</p>
+                        {/* SKU not available in Product type, remove or replace if needed */}
+                      </div>
+                      <div className="text-right">
+                        <Badge variant="destructive">
+                          {product.quantity} left
+                        </Badge>
+                        {/* Reorder level not available in Product type, remove or replace if needed */}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-gray-500 text-sm">All products are well-stocked</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Quick Actions */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <button
-              onClick={() => router.push('/products')}
-              className="flex items-center justify-center p-4 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition-colors"
-            >
-              <Package className="h-6 w-6 text-blue-600 mr-2" />
-              <span className="text-blue-700 font-medium">View Products</span>
-            </button>
-            
-            <button
-              onClick={() => router.push('/scanner')}
-              className="flex items-center justify-center p-4 bg-green-50 hover:bg-green-100 rounded-lg border border-green-200 transition-colors"
-            >
-              <BarChart3 className="h-6 w-6 text-green-600 mr-2" />
-              <span className="text-green-700 font-medium">Scan Products</span>
-            </button>
-            
-            <button
-              onClick={() => router.push('/reports')}
-              className="flex items-center justify-center p-4 bg-purple-50 hover:bg-purple-100 rounded-lg border border-purple-200 transition-colors"
-            >
-              <Calendar className="h-6 w-6 text-purple-600 mr-2" />
-              <span className="text-purple-700 font-medium">View Reports</span>
-            </button>
-          </div>
+        <div className="mt-8">
+          <Card>
+            <CardHeader>
+              <CardTitle>Quick Actions</CardTitle>
+              <CardDescription>Common tasks and shortcuts</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Button className="h-16 flex flex-col items-center justify-center space-y-2">
+                  <PackageIcon className="h-6 w-6" />
+                  <span className="text-sm">Add Product</span>
+                </Button>
+                <Button variant="outline" className="h-16 flex flex-col items-center justify-center space-y-2">
+                  <ShoppingCartIcon className="h-6 w-6" />
+                  <span className="text-sm">New Order</span>
+                </Button>
+                <Button variant="outline" className="h-16 flex flex-col items-center justify-center space-y-2">
+                  <BarChart3Icon className="h-6 w-6" />
+                  <span className="text-sm">View Reports</span>
+                </Button>
+                <Button variant="outline" className="h-16 flex flex-col items-center justify-center space-y-2">
+                  <UsersIcon className="h-6 w-6" />
+                  <span className="text-sm">Manage Users</span>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>

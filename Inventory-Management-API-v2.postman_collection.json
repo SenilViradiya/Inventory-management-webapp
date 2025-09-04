@@ -1,0 +1,1041 @@
+{
+	"info": {
+		"_postman_id": "inventory-mgmt-2024",
+		"name": "Inventory Management System API v2.0",
+		"description": "Complete API collection for Inventory Management System with batch tracking, promotions, analytics, and mobile support.\n\n## 🚀 Quick Setup\n1. Import this collection\n2. Set environment variables (see Variables tab)\n3. Run authentication endpoints to get tokens\n4. Start testing endpoints!\n\n## 🔐 Authentication\nMost endpoints require JWT authentication. Get your token from `/auth/login` endpoint.\n\n## 📱 Mobile Support\nAll endpoints are mobile-friendly with proper error handling and response formatting.\n\n## 🏪 Multi-Environment Support\n- Local Development: localhost:5001\n- Local Network: 192.168.x.x:5001\n- Staging: staging-api.yourdomain.com\n- Production: api.yourdomain.com",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "🔐 Authentication",
+			"item": [
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (responseCode.code === 200) {",
+									"    const response = pm.response.json();",
+									"    pm.environment.set('authToken', response.token);",
+									"    pm.environment.set('userId', response.user._id);",
+									"    pm.environment.set('userRole', response.user.role);",
+									"    console.log('✅ Authentication successful');",
+									"    console.log('Token:', response.token);",
+									"    console.log('User:', response.user.firstName + ' ' + response.user.lastName);",
+									"} else {",
+									"    console.log('❌ Authentication failed');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/users/login",
+							"host": ["{{baseUrl}}"],
+							"path": ["users", "login"]
+						},
+						"description": "Authenticate user and get JWT token"
+					}
+				},
+				{
+					"name": "Register User",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"newuser\",\n  \"email\": \"newuser@example.com\",\n  \"password\": \"password123\",\n  \"firstName\": \"New\",\n  \"lastName\": \"User\",\n  \"role\": \"staff\",\n  \"shopId\": \"{{shopId}}\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/users/register",
+							"host": ["{{baseUrl}}"],
+							"path": ["users", "register"]
+						}
+					}
+				},
+				{
+					"name": "Get Current User",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/users/me",
+							"host": ["{{baseUrl}}"],
+							"path": ["users", "me"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "📦 Products",
+			"item": [
+				{
+					"name": "Get All Products",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/products?page=1&limit=10&search={{searchTerm}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["products"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1",
+									"description": "Page number"
+								},
+								{
+									"key": "limit",
+									"value": "10",
+									"description": "Items per page"
+								},
+								{
+									"key": "search",
+									"value": "{{searchTerm}}",
+									"description": "Search term"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Create Product",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (responseCode.code === 201) {",
+									"    const response = pm.response.json();",
+									"    pm.environment.set('productId', response._id);",
+									"    console.log('✅ Product created:', response.name);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Sample Product\",\n  \"qrCode\": \"QR{{$randomInt}}\",\n  \"barcode\": \"BAR{{$randomInt}}\",\n  \"price\": 15.99,\n  \"costPrice\": 12.50,\n  \"categoryId\": \"{{categoryId}}\",\n  \"description\": \"Sample product for testing\",\n  \"brand\": \"Sample Brand\",\n  \"size\": \"500ml\",\n  \"alcoholContent\": \"5%\",\n  \"minStock\": 10,\n  \"shopId\": \"{{shopId}}\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/products",
+							"host": ["{{baseUrl}}"],
+							"path": ["products"]
+						}
+					}
+				},
+				{
+					"name": "Get Product by ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/products/{{productId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["products", "{{productId}}"]
+						}
+					}
+				},
+				{
+					"name": "Update Product",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Updated Product Name\",\n  \"price\": 18.99,\n  \"description\": \"Updated description\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/products/{{productId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["products", "{{productId}}"]
+						}
+					}
+				},
+				{
+					"name": "Scan Product by QR/Barcode",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/products/scan/{{qrCode}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["products", "scan", "{{qrCode}}"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "📊 Batch Management",
+			"item": [
+				{
+					"name": "Get Product Batches",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/batches/product/{{productId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["batches", "product", "{{productId}}"]
+						},
+						"description": "Get all batches for a specific product sorted by expiry date"
+					}
+				},
+				{
+					"name": "Create New Batch",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (responseCode.code === 201) {",
+									"    const response = pm.response.json();",
+									"    pm.environment.set('batchId', response._id);",
+									"    console.log('✅ Batch created:', response._id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"productId\": \"{{productId}}\",\n  \"supplierId\": \"{{supplierId}}\",\n  \"quantity\": 50,\n  \"purchasePrice\": 12.50,\n  \"expiryDate\": \"2024-12-31T00:00:00.000Z\",\n  \"batchNumber\": \"BATCH{{$randomInt}}\",\n  \"notes\": \"Fresh batch from supplier\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/batches",
+							"host": ["{{baseUrl}}"],
+							"path": ["batches"]
+						}
+					}
+				},
+				{
+					"name": "Update Batch",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"quantity\": 45,\n  \"notes\": \"Updated quantity after stock check\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/batches/{{batchId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["batches", "{{batchId}}"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "🎯 Promotions",
+			"item": [
+				{
+					"name": "Get Active Promotions",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/promotions/active",
+							"host": ["{{baseUrl}}"],
+							"path": ["promotions", "active"]
+						}
+					}
+				},
+				{
+					"name": "Create Promotion",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (responseCode.code === 201) {",
+									"    const response = pm.response.json();",
+									"    pm.environment.set('promotionId', response._id);",
+									"    console.log('✅ Promotion created:', response.name);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Weekend Special\",\n  \"productIds\": [\"{{productId}}\"],\n  \"discountType\": \"percentage\",\n  \"discountValue\": 15,\n  \"startDate\": \"{{$isoTimestamp}}\",\n  \"endDate\": \"2024-12-31T23:59:59.000Z\",\n  \"isActive\": true,\n  \"shopId\": \"{{shopId}}\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/promotions",
+							"host": ["{{baseUrl}}"],
+							"path": ["promotions"]
+						}
+					}
+				},
+				{
+					"name": "Update Promotion",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"discountValue\": 20,\n  \"name\": \"Extended Weekend Special\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/promotions/{{promotionId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["promotions", "{{promotionId}}"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "📊 Stock Management",
+			"item": [
+				{
+					"name": "Add Stock (Creates Batch)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"productId\": \"{{productId}}\",\n  \"quantity\": 25,\n  \"purchasePrice\": 11.50,\n  \"expiryDate\": \"2024-11-30T00:00:00.000Z\",\n  \"supplierId\": \"{{supplierId}}\",\n  \"batchNumber\": \"BATCH{{$randomInt}}\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/stock/add",
+							"host": ["{{baseUrl}}"],
+							"path": ["stock", "add"]
+						},
+						"description": "Add stock using FEFO algorithm - creates or updates batches"
+					}
+				},
+				{
+					"name": "Process Sale (FEFO)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"productId\": \"{{productId}}\",\n  \"quantity\": 3,\n  \"reason\": \"Customer purchase\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/stock/reduce",
+							"host": ["{{baseUrl}}"],
+							"path": ["stock", "reduce"]
+						},
+						"description": "Process sale using FEFO (First Expired First Out) algorithm"
+					}
+				},
+				{
+					"name": "Get Current Stock",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/stock/current",
+							"host": ["{{baseUrl}}"],
+							"path": ["stock", "current"]
+						}
+					}
+				},
+				{
+					"name": "Get Low Stock Alerts",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/stock/low-stock",
+							"host": ["{{baseUrl}}"],
+							"path": ["stock", "low-stock"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "📈 Analytics & Reports",
+			"item": [
+				{
+					"name": "Dashboard Analytics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/analytics/dashboard?period=7days",
+							"host": ["{{baseUrl}}"],
+							"path": ["analytics", "dashboard"],
+							"query": [
+								{
+									"key": "period",
+									"value": "7days",
+									"description": "today, 7days, 30days, 90days"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Detailed Analytics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/analytics/detail?startDate={{startDate}}&endDate={{endDate}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["analytics", "detail"],
+							"query": [
+								{
+									"key": "startDate",
+									"value": "{{startDate}}",
+									"description": "ISO date string"
+								},
+								{
+									"key": "endDate",
+									"value": "{{endDate}}",
+									"description": "ISO date string"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Export Analytics (CSV)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/analytics/detail/export?format=csv&startDate={{startDate}}&endDate={{endDate}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["analytics", "detail", "export"],
+							"query": [
+								{
+									"key": "format",
+									"value": "csv",
+									"description": "csv or pdf"
+								},
+								{
+									"key": "startDate",
+									"value": "{{startDate}}"
+								},
+								{
+									"key": "endDate",
+									"value": "{{endDate}}"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Export Analytics (PDF)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/analytics/detail/export?format=pdf&startDate={{startDate}}&endDate={{endDate}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["analytics", "detail", "export"],
+							"query": [
+								{
+									"key": "format",
+									"value": "pdf"
+								},
+								{
+									"key": "startDate",
+									"value": "{{startDate}}"
+								},
+								{
+									"key": "endDate",
+									"value": "{{endDate}}"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Today's Sales",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/analytics/today-sales",
+							"host": ["{{baseUrl}}"],
+							"path": ["analytics", "today-sales"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "🚨 Alerts & Notifications",
+			"item": [
+				{
+					"name": "Get All Alerts",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/alerts?type={{alertType}}&isRead=false",
+							"host": ["{{baseUrl}}"],
+							"path": ["alerts"],
+							"query": [
+								{
+									"key": "type",
+									"value": "{{alertType}}",
+									"description": "LOW_STOCK, EXPIRY_WARNING, etc."
+								},
+								{
+									"key": "isRead",
+									"value": "false",
+									"description": "Filter by read status"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Mark Alert as Read",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/alerts/{{alertId}}/read",
+							"host": ["{{baseUrl}}"],
+							"path": ["alerts", "{{alertId}}", "read"]
+						}
+					}
+				},
+				{
+					"name": "Get Expiry Alerts",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/enhanced-alerts/expiring-soon?days=7",
+							"host": ["{{baseUrl}}"],
+							"path": ["enhanced-alerts", "expiring-soon"],
+							"query": [
+								{
+									"key": "days",
+									"value": "7",
+									"description": "Days ahead to check"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "🏪 Categories & Suppliers",
+			"item": [
+				{
+					"name": "Get Categories",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/categories",
+							"host": ["{{baseUrl}}"],
+							"path": ["categories"]
+						}
+					}
+				},
+				{
+					"name": "Create Category",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (responseCode.code === 201) {",
+									"    const response = pm.response.json();",
+									"    pm.environment.set('categoryId', response._id);",
+									"    console.log('✅ Category created:', response.name);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Beer\",\n  \"description\": \"Alcoholic beverages - Beer category\",\n  \"shopId\": \"{{shopId}}\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/categories",
+							"host": ["{{baseUrl}}"],
+							"path": ["categories"]
+						}
+					}
+				},
+				{
+					"name": "Get Suppliers",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/suppliers",
+							"host": ["{{baseUrl}}"],
+							"path": ["suppliers"]
+						}
+					}
+				},
+				{
+					"name": "Create Supplier",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (responseCode.code === 201) {",
+									"    const response = pm.response.json();",
+									"    pm.environment.set('supplierId', response._id);",
+									"    console.log('✅ Supplier created:', response.name);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Local Brewery\",\n  \"contactPerson\": \"John Smith\",\n  \"email\": \"john@localbrewery.com\",\n  \"phone\": \"+1234567890\",\n  \"address\": \"123 Brewery St, Beer City\",\n  \"shopId\": \"{{shopId}}\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/suppliers",
+							"host": ["{{baseUrl}}"],
+							"path": ["suppliers"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "📱 Developer Analytics",
+			"item": [
+				{
+					"name": "Ingest Mobile Analytics",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"app\": \"InventoryMobileApp\",\n  \"version\": \"1.0.0\",\n  \"metricType\": \"user_action\",\n  \"eventName\": \"scan_product\",\n  \"userId\": \"{{userId}}\",\n  \"sessionId\": \"session_{{$randomInt}}\",\n  \"deviceInfo\": {\n    \"platform\": \"android\",\n    \"version\": \"12\",\n    \"model\": \"Samsung Galaxy S21\"\n  },\n  \"customData\": {\n    \"scanType\": \"qr_code\",\n    \"success\": true,\n    \"responseTime\": 1250\n  }\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/dev-analytics/ingest",
+							"host": ["{{baseUrl}}"],
+							"path": ["dev-analytics", "ingest"]
+						},
+						"description": "Send analytics data from mobile app (no auth required)"
+					}
+				},
+				{
+					"name": "Get Analytics Report",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/dev-analytics/report?app=InventoryMobileApp&startDate={{startDate}}&endDate={{endDate}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["dev-analytics", "report"],
+							"query": [
+								{
+									"key": "app",
+									"value": "InventoryMobileApp"
+								},
+								{
+									"key": "startDate",
+									"value": "{{startDate}}"
+								},
+								{
+									"key": "endDate",
+									"value": "{{endDate}}"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "🏥 System Health",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/health",
+							"host": ["{{baseUrl}}"],
+							"path": ["health"]
+						},
+						"description": "Check if API is running (no auth required)"
+					}
+				},
+				{
+					"name": "Get API Documentation",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/../api-docs.json",
+							"host": ["{{baseUrl}}"],
+							"path": ["..", "api-docs.json"]
+						},
+						"description": "Get Swagger JSON specification"
+					}
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Auto-set dates for testing",
+					"const now = new Date();",
+					"const weekAgo = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));",
+					"",
+					"pm.environment.set('startDate', weekAgo.toISOString());",
+					"pm.environment.set('endDate', now.toISOString());",
+					"",
+					"// Generate random test data",
+					"pm.environment.set('searchTerm', 'beer');",
+					"pm.environment.set('qrCode', 'QR' + Math.floor(Math.random() * 10000));",
+					"pm.environment.set('alertType', 'LOW_STOCK');"
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Global error handling",
+					"if (responseCode.code >= 400) {",
+					"    console.log('❌ Request failed:', responseCode.code, responseCode.name);",
+					"    console.log('Response:', pm.response.text());",
+					"} else {",
+					"    console.log('✅ Request successful:', responseCode.code);",
+					"}"
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:5001/api",
+			"type": "string",
+			"description": "Base API URL - change for different environments"
+		},
+		{
+			"key": "username",
+			"value": "admin",
+			"type": "string",
+			"description": "Login username"
+		},
+		{
+			"key": "password",
+			"value": "admin123",
+			"type": "string",
+			"description": "Login password"
+		},
+		{
+			"key": "authToken",
+			"value": "",
+			"type": "string",
+			"description": "JWT token (auto-set after login)"
+		},
+		{
+			"key": "userId",
+			"value": "",
+			"type": "string",
+			"description": "Current user ID (auto-set after login)"
+		},
+		{
+			"key": "userRole",
+			"value": "",
+			"type": "string",
+			"description": "Current user role (auto-set after login)"
+		},
+		{
+			"key": "shopId",
+			"value": "your-shop-id",
+			"type": "string",
+			"description": "Shop ID for multi-shop setup"
+		},
+		{
+			"key": "productId",
+			"value": "",
+			"type": "string",
+			"description": "Product ID (auto-set when creating product)"
+		},
+		{
+			"key": "categoryId",
+			"value": "",
+			"type": "string",
+			"description": "Category ID (auto-set when creating category)"
+		},
+		{
+			"key": "supplierId",
+			"value": "",
+			"type": "string",
+			"description": "Supplier ID (auto-set when creating supplier)"
+		},
+		{
+			"key": "batchId",
+			"value": "",
+			"type": "string",
+			"description": "Batch ID (auto-set when creating batch)"
+		},
+		{
+			"key": "promotionId",
+			"value": "",
+			"type": "string",
+			"description": "Promotion ID (auto-set when creating promotion)"
+		},
+		{
+			"key": "alertId",
+			"value": "",
+			"type": "string",
+			"description": "Alert ID for testing alert operations"
+		}
+	]
+}

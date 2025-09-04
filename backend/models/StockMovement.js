@@ -37,6 +37,15 @@ const stockMovementSchema = new mongoose.Schema({
     required: true,
     min: 0
   },
+  batchId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ProductBatch'
+  },
+  unitPrice: { // price per unit at time of movement (purchase or sale)
+    type: Number,
+    default: 0,
+    min: 0
+  },
   previousStock: {
     godown: { type: Number, default: 0 },
     store: { type: Number, default: 0 },

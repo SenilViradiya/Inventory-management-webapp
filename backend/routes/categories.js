@@ -3,11 +3,19 @@ const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const { Parser } = require('json2csv');
 const PDFDocument = require('pdfkit');
+const fs = require('fs');
+const path = require('path');
 const Category = require('../models/Category');
 const Product = require('../models/Product');
 const Shop = require('../models/Shop');
 const ActivityLog = require('../models/ActivityLog');
 const { authenticateToken, requirePermission } = require('../middleware/auth');
+
+// Ensure exports directory exists
+const exportsDir = path.join(__dirname, '../exports');
+if (!fs.existsSync(exportsDir)) {
+  fs.mkdirSync(exportsDir, { recursive: true });
+}
 
      
       
@@ -972,316 +980,572 @@ router.get('/stock-summary', authenticateToken, async (req, res) => {
   }
 });
 
-// Helper function to export stock summary as CSV
+// UK-specific formatting utilities
+const formatCurrencyUK = (amount) => {
+  return new Intl.NumberFormat('en-GB', {
+    style: 'currency',
+    currency: 'GBP',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(amount);
+};
+
+const formatDateUK = (date) => {
+  if (!date) return '';
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  }).format(new Date(date));
+};
+
+const formatDateTimeUK = (date) => {
+  if (!date) return '';
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).format(new Date(date));
+};
+
+/**
+ * Export stock summary as CSV with professional UK formatting
+ * @param {Object} res - Express response object
+ * @param {Array} categoryStockSummary - Category-wise stock data
+ * @param {Object} overallSummary - Overall summary statistics
+ */
 function exportStockSummaryAsCSV(res, categoryStockSummary, overallSummary) {
   try {
-    // Flatten data for CSV export
     const csvData = [];
     
-    categoryStockSummary.forEach(catSummary => {
+    // Add header information
+    csvData.push({
+      'Category Name': 'STOCK SUMMARY REPORT',
+      'Category Description': 'Inventory Management System',
+      'Product Name': `Generated: ${formatDateTimeUK(new Date())}`,
+      'Brand': '',
+      'QR Code': '',
+      'Price (£)': '',
+      'Description': '',
+      'Warehouse Stock': '',
+      'Shop Floor Stock': '',
+      'Total Stock': '',
+      'Reserved Stock': '',
+      'Available Stock': '',
+      'Stock Value (£)': '',
+      'Stock Level': '',
+      'Stock Health': '',
+      'Low Stock Threshold': '',
+      'Low Stock Alert': '',
+      'Out of Stock Alert': '',
+      'Reorder Required': '',
+      'Expiry Date': '',
+      'Expiry Alert': '',
+      'Created By': '',
+      'Last Updated': ''
+    });
+
+    // Add empty row
+    csvData.push({});
+
+    // Process each category
+    categoryStockSummary.forEach((catSummary, catIndex) => {
+      // Category header
+      csvData.push({
+        'Category Name': `CATEGORY ${catIndex + 1}: ${catSummary.category.name.toUpperCase()}`,
+        'Category Description': catSummary.category.description || 'No description available',
+        'Product Name': `Products in Category: ${catSummary.products.length}`,
+        'Brand': '',
+        'QR Code': '',
+        'Price (£)': '',
+        'Description': '',
+        'Warehouse Stock': '',
+        'Shop Floor Stock': '',
+        'Total Stock': '',
+        'Reserved Stock': '',
+        'Available Stock': '',
+        'Stock Value (£)': formatCurrencyUK(catSummary.stockSummary.stockValue),
+        'Stock Level': '',
+        'Stock Health': '',
+        'Low Stock Threshold': '',
+        'Low Stock Alert': '',
+        'Out of Stock Alert': '',
+        'Reorder Required': '',
+        'Expiry Date': '',
+        'Expiry Alert': '',
+        'Created By': '',
+        'Last Updated': ''
+      });
+
+      // Add product details
       catSummary.products.forEach((product, index) => {
         csvData.push({
-          'Category Name': index === 0 ? catSummary.category.name : '', // Only show category name on first product
-          'Category Description': index === 0 ? catSummary.category.description : '',
-          'Product Name': product.productName,
-          'Brand': product.brand,
-          'QR Code': product.qrCode,
-          'Price': product.price,
-          'Description': product.description,
-          'Godown Stock': product.stockDetails.godown.quantity,
-          'Store Stock': product.stockDetails.store.quantity,
-          'Total Stock': product.stockDetails.total,
-          'Reserved Stock': product.stockDetails.reserved,
-          'Available Stock': product.stockDetails.available,
-          'Stock Value': product.stockDetails.stockValue,
-          'Stock Level': product.stockStatus.level,
-          'Stock Health': product.stockStatus.stockHealth,
-          'Low Stock Threshold': product.stockStatus.threshold,
-          'Is Low Stock': product.stockStatus.isLowStock ? 'Yes' : 'No',
-          'Is Out of Stock': product.stockStatus.isOutOfStock ? 'Yes' : 'No',
-          'Needs Reorder': product.stockStatus.needsReorder ? 'Yes' : 'No',
-          'Expiration Date': product.expirationDate ? new Date(product.expirationDate).toLocaleDateString() : '',
-          'Is Expiring': product.isExpiring ? 'Yes' : 'No',
-          'Created By': product.createdBy,
-          'Last Updated': product.lastUpdated ? new Date(product.lastUpdated).toLocaleDateString() : ''
+          'Category Name': index === 0 ? catSummary.category.name : '',
+          'Category Description': index === 0 ? (catSummary.category.description || '') : '',
+          'Product Name': product.productName || 'Unnamed Product',
+          'Brand': product.brand || 'Unknown Brand',
+          'QR Code': product.qrCode || 'Not Assigned',
+          'Price (£)': formatCurrencyUK(product.price || 0),
+          'Description': product.description || 'No description',
+          'Warehouse Stock': product.stockDetails.godown.quantity || 0,
+          'Shop Floor Stock': product.stockDetails.store.quantity || 0,
+          'Total Stock': product.stockDetails.total || 0,
+          'Reserved Stock': product.stockDetails.reserved || 0,
+          'Available Stock': product.stockDetails.available || 0,
+          'Stock Value (£)': formatCurrencyUK(product.stockDetails.stockValue || 0),
+          'Stock Level': product.stockStatus.level || 'Unknown',
+          'Stock Health': product.stockStatus.stockHealth || 'Unknown',
+          'Low Stock Threshold': product.stockStatus.threshold || 0,
+          'Low Stock Alert': product.stockStatus.isLowStock ? 'YES' : 'NO',
+          'Out of Stock Alert': product.stockStatus.isOutOfStock ? 'YES' : 'NO',
+          'Reorder Required': product.stockStatus.needsReorder ? 'YES' : 'NO',
+          'Expiry Date': formatDateUK(product.expirationDate),
+          'Expiry Alert': product.isExpiring ? 'YES' : 'NO',
+          'Created By': product.createdBy || 'System',
+          'Last Updated': formatDateUK(product.lastUpdated)
         });
       });
       
       // Add category summary row
       csvData.push({
-        'Category Name': `${catSummary.category.name} - SUMMARY`,
+        'Category Name': `${catSummary.category.name.toUpperCase()} - CATEGORY SUMMARY`,
         'Category Description': `Total Products: ${catSummary.stockSummary.totalProducts}`,
         'Product Name': 'CATEGORY TOTALS',
         'Brand': '',
         'QR Code': '',
-        'Price': '',
-        'Description': '',
-        'Godown Stock': catSummary.stockSummary.stockDistribution.godown.quantity,
-        'Store Stock': catSummary.stockSummary.stockDistribution.store.quantity,
-        'Total Stock': catSummary.stockSummary.stockDistribution.total,
-        'Reserved Stock': catSummary.stockSummary.stockDistribution.reserved,
-        'Available Stock': catSummary.stockSummary.stockDistribution.available,
-        'Stock Value': catSummary.stockSummary.stockValue,
-        'Stock Level': '',
-        'Stock Health': '',
+        'Price (£)': '',
+        'Description': `Low Stock: ${catSummary.stockSummary.alerts?.lowStock || 0} | Out of Stock: ${catSummary.stockSummary.alerts?.outOfStock || 0}`,
+        'Warehouse Stock': catSummary.stockSummary.stockDistribution.godown.quantity || 0,
+        'Shop Floor Stock': catSummary.stockSummary.stockDistribution.store.quantity || 0,
+        'Total Stock': catSummary.stockSummary.stockDistribution.total || 0,
+        'Reserved Stock': catSummary.stockSummary.stockDistribution.reserved || 0,
+        'Available Stock': catSummary.stockSummary.stockDistribution.available || 0,
+        'Stock Value (£)': formatCurrencyUK(catSummary.stockSummary.stockValue || 0),
+        'Stock Level': 'CATEGORY TOTAL',
+        'Stock Health': catSummary.stockSummary.alerts?.lowStock > 0 ? 'Attention Required' : 'Good',
         'Low Stock Threshold': '',
-        'Is Low Stock': '',
-        'Is Out of Stock': '',
-        'Needs Reorder': '',
-        'Expiration Date': '',
-        'Is Expiring': '',
+        'Low Stock Alert': `${catSummary.stockSummary.alerts?.lowStock || 0} Items`,
+        'Out of Stock Alert': `${catSummary.stockSummary.alerts?.outOfStock || 0} Items`,
+        'Reorder Required': '',
+        'Expiry Date': '',
+        'Expiry Alert': '',
         'Created By': '',
-        'Last Updated': ''
+        'Last Updated': formatDateUK(new Date())
       });
       
-      // Add empty row between categories
+      // Add separator
       csvData.push({});
     });
     
     // Add overall summary
     csvData.push({
-      'Category Name': 'OVERALL SUMMARY',
+      'Category Name': 'GRAND SUMMARY - ENTIRE STORE',
       'Category Description': `Total Categories: ${overallSummary.totalCategories}`,
-      'Product Name': 'GRAND TOTALS',
+      'Product Name': 'STORE TOTALS',
       'Brand': '',
       'QR Code': '',
-      'Price': '',
-      'Description': '',
-      'Godown Stock': overallSummary.overallStock.godown,
-      'Store Stock': overallSummary.overallStock.store,
-      'Total Stock': overallSummary.overallStock.total,
-      'Reserved Stock': overallSummary.overallStock.reserved,
-      'Available Stock': overallSummary.overallStock.total - overallSummary.overallStock.reserved,
-      'Stock Value': overallSummary.totalStockValue,
-      'Stock Level': '',
-      'Stock Health': '',
+      'Price (£)': '',
+      'Description': `Total Products: ${overallSummary.totalProducts || 0}`,
+      'Warehouse Stock': overallSummary.overallStock.godown || 0,
+      'Shop Floor Stock': overallSummary.overallStock.store || 0,
+      'Total Stock': overallSummary.overallStock.total || 0,
+      'Reserved Stock': overallSummary.overallStock.reserved || 0,
+      'Available Stock': (overallSummary.overallStock.total || 0) - (overallSummary.overallStock.reserved || 0),
+      'Stock Value (£)': formatCurrencyUK(overallSummary.totalStockValue || 0),
+      'Stock Level': 'STORE TOTAL',
+      'Stock Health': (overallSummary.overallAlerts?.totalLowStock || 0) > 0 ? 'Attention Required' : 'Good',
       'Low Stock Threshold': '',
-      'Is Low Stock': `${overallSummary.overallAlerts.totalLowStock} products`,
-      'Is Out of Stock': `${overallSummary.overallAlerts.totalOutOfStock} products`,
-      'Needs Reorder': '',
-      'Expiration Date': '',
-      'Is Expiring': '',
-      'Created By': '',
-      'Last Updated': new Date().toLocaleDateString()
+      'Low Stock Alert': `${overallSummary.overallAlerts?.totalLowStock || 0} Products`,
+      'Out of Stock Alert': `${overallSummary.overallAlerts?.totalOutOfStock || 0} Products`,
+      'Reorder Required': 'See Individual Products',
+      'Expiry Date': '',
+      'Expiry Alert': '',
+      'Created By': 'System Generated',
+      'Last Updated': formatDateUK(new Date())
     });
 
     const csv = new Parser().parse(csvData);
     
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename="stock_summary.csv"');
-    return res.send(csv);
+    const timestamp = new Date().toISOString().split('T')[0];
+    const filename = `stock_summary_${timestamp}.csv`;
+    const filePath = path.join(exportsDir, filename);
+    
+    // Save to local file system
+    fs.writeFileSync(filePath, '\uFEFF' + csv); // Add BOM for proper Excel UTF-8 handling
+    console.log(`✅ CSV exported successfully: ${filePath}`);
+    
+    // Send response to client
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'no-cache');
+    
+    return res.send('\uFEFF' + csv);
+    
   } catch (error) {
-    console.error('Error exporting CSV:', error);
-    return res.status(500).json({ success: false, message: 'Error exporting CSV', error: error.message });
+    console.error('❌ CSV Export Error:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Failed to export CSV file', 
+      error: error.message,
+      timestamp: formatDateTimeUK(new Date())
+    });
   }
 }
 
-// Helper function to export stock summary as Excel (JSON format for Excel readers)
+/**
+ * Export stock summary as Excel format (Enhanced JSON structure)
+ * @param {Object} res - Express response object
+ * @param {Array} categoryStockSummary - Category-wise stock data
+ * @param {Object} overallSummary - Overall summary statistics
+ */
 function exportStockSummaryAsExcel(res, categoryStockSummary, overallSummary) {
   try {
     const excelData = {
-      summary: overallSummary,
-      categories: categoryStockSummary,
+      reportInfo: {
+        title: 'Professional Stock Summary Report',
+        subtitle: 'UK Store Management System',
+        generatedAt: formatDateTimeUK(new Date()),
+        generatedBy: 'Store Management System v2.0',
+        format: 'Excel Compatible JSON',
+        currency: 'GBP (£)',
+        locale: 'en-GB'
+      },
+      overallSummary: {
+        ...overallSummary,
+        totalStockValueFormatted: formatCurrencyUK(overallSummary.totalStockValue || 0),
+        summaryDate: formatDateUK(new Date()),
+        stockDistribution: {
+          warehouse: {
+            quantity: overallSummary.overallStock?.godown || 0,
+            percentage: overallSummary.overallStock?.godownPercentage || 0
+          },
+          shopFloor: {
+            quantity: overallSummary.overallStock?.store || 0,
+            percentage: overallSummary.overallStock?.storePercentage || 0
+          },
+          total: overallSummary.overallStock?.total || 0,
+          reserved: overallSummary.overallStock?.reserved || 0,
+          available: (overallSummary.overallStock?.total || 0) - (overallSummary.overallStock?.reserved || 0)
+        }
+      },
+      categoryBreakdown: categoryStockSummary.map(catSummary => ({
+        category: {
+          ...catSummary.category,
+          productCount: catSummary.products.length
+        },
+        stockSummary: {
+          ...catSummary.stockSummary,
+          stockValueFormatted: formatCurrencyUK(catSummary.stockSummary.stockValue || 0),
+          stockDistribution: {
+            warehouse: catSummary.stockSummary.stockDistribution?.godown?.quantity || 0,
+            shopFloor: catSummary.stockSummary.stockDistribution?.store?.quantity || 0,
+            total: catSummary.stockSummary.stockDistribution?.total || 0,
+            reserved: catSummary.stockSummary.stockDistribution?.reserved || 0,
+            available: catSummary.stockSummary.stockDistribution?.available || 0
+          }
+        },
+        products: catSummary.products.map(product => ({
+          ...product,
+          priceFormatted: formatCurrencyUK(product.price || 0),
+          stockValueFormatted: formatCurrencyUK(product.stockDetails?.stockValue || 0),
+          expirationDateFormatted: formatDateUK(product.expirationDate),
+          lastUpdatedFormatted: formatDateUK(product.lastUpdated),
+          alerts: {
+            isLowStock: product.stockStatus?.isLowStock || false,
+            isOutOfStock: product.stockStatus?.isOutOfStock || false,
+            needsReorder: product.stockStatus?.needsReorder || false,
+            isExpiring: product.isExpiring || false
+          },
+          stockDetails: {
+            warehouse: product.stockDetails?.godown?.quantity || 0,
+            shopFloor: product.stockDetails?.store?.quantity || 0,
+            total: product.stockDetails?.total || 0,
+            reserved: product.stockDetails?.reserved || 0,
+            available: product.stockDetails?.available || 0,
+            stockValue: product.stockDetails?.stockValue || 0
+          }
+        }))
+      })),
       metadata: {
         exportedAt: new Date().toISOString(),
-        format: 'excel',
-        description: 'Stock Summary Report - Excel Format'
+        exportedAtUK: formatDateTimeUK(new Date()),
+        format: 'Enhanced Excel JSON',
+        description: 'Professional Stock Summary Report - Excel Compatible Format',
+        version: '2.0.0',
+        locale: 'en-GB',
+        currency: 'GBP',
+        totalRecords: categoryStockSummary.reduce((acc, cat) => acc + cat.products.length, 0)
       }
     };
     
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', 'attachment; filename="stock_summary.json"');
+    const timestamp = new Date().toISOString().split('T')[0];
+    const filename = `stock_summary_excel_${timestamp}.json`;
+    const filePath = path.join(exportsDir, filename);
+    
+    // Save to local file system
+    fs.writeFileSync(filePath, JSON.stringify(excelData, null, 2));
+    console.log(`✅ Excel JSON exported successfully: ${filePath}`);
+    
+    // Send response to client
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'no-cache');
+    
     return res.json(excelData);
+    
   } catch (error) {
-    console.error('Error exporting Excel:', error);
-    return res.status(500).json({ success: false, message: 'Error exporting Excel', error: error.message });
+    console.error('❌ Excel Export Error:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Failed to export Excel file', 
+      error: error.message,
+      timestamp: formatDateTimeUK(new Date())
+    });
   }
 }
 
-// Helper function to export stock summary as PDF
+/**
+ * Export stock summary as professional PDF with UK formatting
+ * @param {Object} res - Express response object
+ * @param {Array} categoryStockSummary - Category-wise stock data
+ * @param {Object} overallSummary - Overall summary statistics
+ */
 function exportStockSummaryAsPDF(res, categoryStockSummary, overallSummary) {
   try {
-    const doc = new PDFDocument({ margin: 30, size: 'A4' });
+    const doc = new PDFDocument({ 
+      margin: 50, // Increased margin from 40 to 50
+      size: 'A4',
+      info: {
+        Title: 'Stock Summary Report',
+        Author: 'UK Store Management System',
+        Subject: 'Professional Inventory Report',
+        Keywords: 'stock, inventory, report, UK, professional'
+      }
+    });
     
+    const timestamp = new Date().toISOString().split('T')[0];
+    const filename = `stock_summary_${timestamp}.pdf`;
+    const filePath = path.join(exportsDir, filename);
+    
+    // Save to local file system first
+    const writeStream = fs.createWriteStream(filePath);
+    doc.pipe(writeStream);
+    
+    // Also send response to client
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="stock_summary_${new Date().toISOString().split('T')[0]}.pdf"`);
-    
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'no-cache');
     doc.pipe(res);
 
-    // Title
-    doc.fontSize(18).font('Helvetica-Bold');
-    doc.text('Stock Summary Report', { align: 'center' });
-    doc.moveDown(0.5);
-    doc.fontSize(10).font('Helvetica');
-    doc.text(`Generated on: ${new Date().toLocaleString()}`, { align: 'center' });
-    doc.moveDown(1);
+    // Get shop information for header
+    let shopName = 'UK Store Management System';
+    if (categoryStockSummary.length > 0 && categoryStockSummary[0].category?.shopName) {
+      shopName = categoryStockSummary[0].category.shopName;
+    }
 
-    // Overall Summary Table
-    doc.fontSize(14).font('Helvetica-Bold');
-    doc.text('Overall Summary', 30, doc.y);
-    doc.moveDown(0.5);
-
-    // Summary table with proper borders
-    const summaryTableY = doc.y;
-    const summaryColWidths = [200, 120, 120, 120];
-    const summaryHeaders = ['Metric', 'Count/Stock', 'Value', 'Percentage'];
-    
-    // Draw table header
-    doc.fontSize(11).font('Helvetica-Bold');
-    let currentX = 30;
-    summaryHeaders.forEach((header, i) => {
-      doc.rect(currentX, summaryTableY, summaryColWidths[i], 25).stroke();
-      doc.fillColor('#f0f0f0').rect(currentX, summaryTableY, summaryColWidths[i], 25).fill();
+    // Helper function to add header to each page
+    function addHeader() {
+      doc.fillColor('#1e3a8a').fontSize(24).font('Helvetica-Bold');
+      doc.text('STOCK SUMMARY REPORT', 50, 50, { align: 'center' });
+      
+      doc.fillColor('#3b82f6').fontSize(16).font('Helvetica');
+      doc.text(shopName, 50, 85, { align: 'center' });
+      
+      doc.fillColor('#6b7280').fontSize(12).font('Helvetica');
+      doc.text(`Generated: ${formatDateTimeUK(new Date())} | Currency: GBP (£)`, 50, 110, { align: 'center' });
+      
+      // Add company line
+      doc.strokeColor('#e5e7eb').lineWidth(2);
+      doc.moveTo(50, 135).lineTo(545, 135).stroke();
+      
       doc.fillColor('black');
-      doc.text(header, currentX + 8, summaryTableY + 8, { width: summaryColWidths[i] - 16 });
+      doc.y = 150;
+    }
+
+    // Add initial header
+    addHeader();
+
+    // Executive Summary Section
+    doc.fontSize(16).font('Helvetica-Bold').fillColor('#1e40af');
+    doc.text('EXECUTIVE SUMMARY', 50, doc.y);
+    doc.moveDown(0.5);
+
+    // Professional summary table with proper margins
+    const summaryTableY = doc.y;
+    const summaryColWidths = [200, 110, 110, 110]; // Adjusted for 50px margins
+    const summaryHeaders = ['Key Metrics', 'Quantity', 'Value (£)', 'Percentage'];
+    
+    // Draw professional table header
+    doc.fontSize(12).font('Helvetica-Bold').fillColor('white');
+    let currentX = 50;
+    summaryHeaders.forEach((header, i) => {
+      doc.rect(currentX, summaryTableY, summaryColWidths[i], 30).fill('#1e40af').stroke('#1e40af');
+      doc.text(header, currentX + 10, summaryTableY + 10, { width: summaryColWidths[i] - 20 });
       currentX += summaryColWidths[i];
     });
 
-    // Summary table data
+    // Summary data with professional formatting
     const summaryData = [
-      ['Total Categories', overallSummary.totalCategories.toString(), '-', '-'],
-      ['Total Products', overallSummary.totalProducts.toString(), '-', '-'],
-      ['Total Stock Value', '-', `$${overallSummary.totalStockValue.toFixed(2)}`, '-'],
-      ['Total Stock Units', overallSummary.overallStock.total.toString(), '-', '100%'],
-      ['Godown Stock', overallSummary.overallStock.godown.toString(), '-', `${overallSummary.overallStock.godownPercentage || 0}%`],
-      ['Store Stock', overallSummary.overallStock.store.toString(), '-', `${overallSummary.overallStock.storePercentage || 0}%`],
-      ['Reserved Stock', overallSummary.overallStock.reserved.toString(), '-', '-'],
-      ['Low Stock Items', overallSummary.overallAlerts.totalLowStock.toString(), '-', '-'],
-      ['Out of Stock Items', overallSummary.overallAlerts.totalOutOfStock.toString(), '-', '-']
+      ['Total Categories', (overallSummary.totalCategories || 0).toString(), '-', '100%'],
+      ['Total Products', (overallSummary.totalProducts || 0).toString(), '-', '100%'],
+      ['Total Stock Value', '-', formatCurrencyUK(overallSummary.totalStockValue || 0), '100%'],
+      ['Total Stock Units', (overallSummary.overallStock?.total || 0).toString(), '-', '100%'],
+      ['Warehouse Stock', (overallSummary.overallStock?.godown || 0).toString(), '-', `${overallSummary.overallStock?.godownPercentage || 0}%`],
+      ['Shop Floor Stock', (overallSummary.overallStock?.store || 0).toString(), '-', `${overallSummary.overallStock?.storePercentage || 0}%`],
+      ['Reserved Stock', (overallSummary.overallStock?.reserved || 0).toString(), '-', `${(((overallSummary.overallStock?.reserved || 0) / (overallSummary.overallStock?.total || 1)) * 100).toFixed(1)}%`],
+      ['Low Stock Alerts', (overallSummary.overallAlerts?.totalLowStock || 0).toString(), '-', 'Alert Level'],
+      ['Out of Stock Items', (overallSummary.overallAlerts?.totalOutOfStock || 0).toString(), '-', 'Critical']
     ];
 
-    doc.fontSize(10).font('Helvetica');
+    doc.fontSize(11).font('Helvetica').fillColor('black');
     summaryData.forEach((row, rowIndex) => {
-      const rowY = summaryTableY + 25 + (rowIndex * 22);
-      currentX = 30;
+      const rowY = summaryTableY + 30 + (rowIndex * 25);
+      currentX = 50;
+      
+      // Alternate row colours for better readability
+      const fillColor = rowIndex % 2 === 0 ? '#f8fafc' : '#ffffff';
+      doc.rect(50, rowY, 530, 25).fill(fillColor); // Adjusted width for margins
       
       row.forEach((cell, colIndex) => {
-        doc.rect(currentX, rowY, summaryColWidths[colIndex], 22).stroke();
-        doc.text(cell.toString(), currentX + 8, rowY + 6, { width: summaryColWidths[colIndex] - 16 });
+        doc.rect(currentX, rowY, summaryColWidths[colIndex], 25).stroke('#e2e8f0');
+        
+        // Highlight critical values
+        const textColor = (cell.includes('Critical') || cell.includes('Alert')) ? '#dc2626' : '#1f2937';
+        doc.fillColor(textColor);
+        
+        doc.text(cell, currentX + 8, rowY + 8, { 
+          width: summaryColWidths[colIndex] - 16,
+          align: colIndex === 0 ? 'left' : 'center'
+        });
         currentX += summaryColWidths[colIndex];
       });
     });
 
-    doc.y = summaryTableY + 25 + (summaryData.length * 22) + 30;
+    doc.fillColor('black');
+    doc.y = summaryTableY + 30 + (summaryData.length * 25) + 30;
 
-    // Category Details
-    categoryStockSummary.forEach((catSummary, catIndex) => {
-      if (catIndex > 0 || doc.y > 600) {
+    // Add detailed category analysis with proper pagination
+    doc.fontSize(14).font('Helvetica-Bold').fillColor('#1f2937');
+    doc.text('📊 DETAILED CATEGORY ANALYSIS', 50, doc.y);
+    doc.moveDown(1);
+
+    categoryStockSummary.forEach((category, categoryIndex) => {
+      // Check if we need a new page (more conservative page break)
+      if (doc.y > 650) {
         doc.addPage();
-        doc.y = 50;
+        addHeader();
       }
 
-      // Category Header
-      doc.fontSize(16).font('Helvetica-Bold');
-      doc.fillColor('#2563eb');
-      doc.text(`Category: ${catSummary.category.name}`, 30, doc.y);
-      doc.fillColor('black');
-      doc.moveDown(0.3);
-      
-      doc.fontSize(11).font('Helvetica');
-      doc.text(`Products: ${catSummary.stockSummary.totalProducts} | Total Stock: ${catSummary.stockSummary.stockDistribution.total} | Value: $${catSummary.stockSummary.stockValue.toFixed(2)}`, 30, doc.y);
-      doc.moveDown(0.7);
+      doc.fontSize(12).font('Helvetica-Bold').fillColor('#3b82f6');
+      doc.text(`${categoryIndex + 1}. ${category.category.name}`, 50, doc.y);
+      doc.moveDown(0.5);
 
-      if (catSummary.products.length > 0) {
-        // Products Table Header (removed Brand column, increased Product Name width)
-        const tableTop = doc.y;
-        const colWidths = [280, 70, 70, 70, 80, 90];
-        const headers = ['Product Name', 'Godown', 'Store', 'Total', 'Price', 'Status'];
+      // Category summary in a professional box
+      const categoryBoxY = doc.y;
+      doc.rect(50, categoryBoxY, 530, 80).fill('#f1f5f9').stroke('#cbd5e1'); // Adjusted for margins
+      
+      doc.fontSize(10).font('Helvetica').fillColor('#334155');
+      doc.text(`Products: ${category.stockSummary.totalProducts} | Total Value: ${formatCurrencyUK(category.stockSummary.stockValue)}`, 60, categoryBoxY + 10);
+      doc.text(`Stock Units: ${category.stockSummary.stockDistribution.total} | Low Stock: ${category.stockSummary.alerts.lowStock}`, 60, categoryBoxY + 25);
+      doc.text(`Warehouse: ${category.stockSummary.stockDistribution.godown.quantity} | Store: ${category.stockSummary.stockDistribution.store.quantity}`, 60, categoryBoxY + 40);
+      if (category.category.description) {
+        doc.text(`Description: ${category.category.description}`, 60, categoryBoxY + 55);
+      }
+
+      doc.y = categoryBoxY + 90;
+
+      // Products table for this category with pagination
+      if (category.products && category.products.length > 0) {
+        const colWidths = [180, 70, 70, 70, 70, 75]; // Adjusted for margins
+        const headers = ['Product Name', 'Warehouse', 'Store', 'Total', 'Price (£)', 'Status'];
         
-        doc.fontSize(11).font('Helvetica-Bold');
-        currentX = 30;
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#1f2937');
+        doc.text('Products in this category:', 50, doc.y);
+        doc.moveDown(0.5);
+
+        // Calculate how many products can fit per page
+        const productRowHeight = 25;
+        const maxProductsPerPage = Math.floor((750 - doc.y) / productRowHeight) - 2; // Reserve space for header and total
+
+        // Show first 5 products, then summarize the rest
+        const productsToShow = category.products.slice(0, 5);
+        const remainingProducts = category.products.slice(5);
+
+        const tableY = doc.y;
+        
+        // Table header
+        doc.fontSize(10).font('Helvetica-Bold').fillColor('white');
+        currentX = 50;
         headers.forEach((header, i) => {
-          doc.rect(currentX, tableTop, colWidths[i], 25).stroke();
-          doc.fillColor('#f8f9fa').rect(currentX, tableTop, colWidths[i], 25).fill();
-          doc.fillColor('black');
-          doc.text(header, currentX + 5, tableTop + 8, { width: colWidths[i] - 10 });
+          doc.rect(currentX, tableY, colWidths[i], 25).fill('#1e40af').stroke('#1e40af');
+          doc.text(header, currentX + 5, tableY + 8, { width: colWidths[i] - 10 });
           currentX += colWidths[i];
         });
 
-        // Products Data
-        doc.fontSize(10).font('Helvetica');
-        catSummary.products.forEach((product, prodIndex) => {
-          const rowY = tableTop + 25 + (prodIndex * 35); // Increased row height for two-line text
+        // Show first 5 products
+        doc.fontSize(9).font('Helvetica').fillColor('black');
+        productsToShow.forEach((product, productIndex) => {
+          const rowY = tableY + 25 + (productIndex * 20);
+          currentX = 50;
           
-          if (rowY > 720) {
-            doc.addPage();
-            doc.y = 50;
-            return;
-          }
-
-          currentX = 30;
-          
-          // Product name with two-line support
-          const productName = product.productName;
-          const maxLineLength = 40; // Approximate characters per line
-          let displayName = productName;
-          let secondLine = '';
-          
-          if (productName.length > maxLineLength) {
-            // Try to break at a word boundary
-            const words = productName.split(' ');
-            let firstLine = '';
-            let remainingWords = [];
-            
-            for (let i = 0; i < words.length; i++) {
-              if ((firstLine + words[i]).length <= maxLineLength) {
-                firstLine += (firstLine ? ' ' : '') + words[i];
-              } else {
-                remainingWords = words.slice(i);
-                break;
-              }
-            }
-            
-            displayName = firstLine;
-            secondLine = remainingWords.join(' ');
-            if (secondLine.length > maxLineLength) {
-              secondLine = secondLine.substring(0, maxLineLength - 3) + '...';
-            }
-          }
+          // Alternate row colors
+          const fillColor = productIndex % 2 === 0 ? '#ffffff' : '#f8fafc';
+          doc.rect(50, rowY, 535, 20).fill(fillColor); // Adjusted width
 
           const rowData = [
-            displayName,
-            product.stockDetails.godown.quantity.toString(),
-            product.stockDetails.store.quantity.toString(),
-            product.stockDetails.total.toString(),
-            `$${product.price.toFixed(2)}`,
-            product.stockStatus.level
+            product.productName.length > 25 ? product.productName.substring(0, 22) + '...' : product.productName,
+            (product.stockDetails.godown.quantity || 0).toString(),
+            (product.stockDetails.store.quantity || 0).toString(),
+            (product.stockDetails.total || 0).toString(),
+            formatCurrencyUK(product.price || 0).replace('£', ''),
+            product.stockStatus.level === 'LOW_STOCK' ? '🔻 Low' : 
+            product.stockStatus.level === 'OUT_OF_STOCK' ? '❌ Out' : '✅ OK'
           ];
 
           rowData.forEach((data, i) => {
-            doc.rect(currentX, rowY, colWidths[i], 35).stroke();
-            if (i === 0) {
-              // Product name column - handle two lines
-              doc.text(data, currentX + 5, rowY + 5, { width: colWidths[i] - 10 });
-              if (secondLine) {
-                doc.text(secondLine, currentX + 5, rowY + 18, { width: colWidths[i] - 10 });
-              }
+            doc.rect(currentX, rowY, colWidths[i], 20).stroke('#e2e8f0');
+            
+            // Color code the status column
+            if (i === 5) {
+              const color = data.includes('Low') ? '#f59e0b' : data.includes('Out') ? '#dc2626' : '#059669';
+              doc.fillColor(color);
             } else {
-              // Other columns - center vertically
-              doc.text(data, currentX + 5, rowY + 12, { width: colWidths[i] - 10 });
+              doc.fillColor('#1f2937');
             }
+            
+            doc.text(data, currentX + 3, rowY + 6, { width: colWidths[i] - 6 });
             currentX += colWidths[i];
           });
         });
 
-        // Category totals row
-        const totalRowY = tableTop + 25 + (catSummary.products.length * 35);
-        doc.fontSize(11).font('Helvetica-Bold').fillColor('#1e40af');
-        currentX = 30;
-        
+        let nextRowY = tableY + 25 + (productsToShow.length * 20);
+
+        // Show summary for remaining products if any
+        if (remainingProducts.length > 0) {
+          doc.fontSize(9).font('Helvetica-Oblique').fillColor('#6b7280');
+          doc.rect(50, nextRowY, 535, 20).fill('#f9fafb').stroke('#e2e8f0');
+          doc.text(`... and ${remainingProducts.length} more products (total: ${category.products.length} products)`, 55, nextRowY + 6);
+          nextRowY += 20;
+        }
+
+        // Category total row
+        const totalRowY = nextRowY;
         const totalData = [
           'CATEGORY TOTAL:',
-          catSummary.stockSummary.stockDistribution.godown.quantity.toString(),
-          catSummary.stockSummary.stockDistribution.store.quantity.toString(),
-          catSummary.stockSummary.stockDistribution.total.toString(),
-          `$${catSummary.stockSummary.stockValue.toFixed(2)}`,
-          `${catSummary.stockSummary.alerts.lowStock} Low | ${catSummary.stockSummary.alerts.outOfStock} Out`
+          category.stockSummary.stockDistribution.godown.quantity.toString(),
+          category.stockSummary.stockDistribution.store.quantity.toString(),
+          category.stockSummary.stockDistribution.total.toString(),
+          formatCurrencyUK(category.stockSummary.stockValue).replace('£', ''),
+          `${category.stockSummary.alerts.lowStock} Low`
         ];
 
+        doc.fontSize(10).font('Helvetica-Bold').fillColor('white');
+        currentX = 50;
         totalData.forEach((data, i) => {
-          doc.rect(currentX, totalRowY, colWidths[i], 25).stroke();
-          doc.fillColor('#e0f2fe').rect(currentX, totalRowY, colWidths[i], 25).fill();
-          doc.fillColor('#1e40af');
+          doc.rect(currentX, totalRowY, colWidths[i], 25).fill('#1e40af').stroke('#1e40af');
           doc.text(data, currentX + 5, totalRowY + 8, { width: colWidths[i] - 10 });
           currentX += colWidths[i];
         });
@@ -1293,14 +1557,39 @@ function exportStockSummaryAsPDF(res, categoryStockSummary, overallSummary) {
       doc.moveDown(1);
     });
 
-    // Footer
-    doc.fontSize(8).font('Helvetica');
-    doc.text(`Generated on: ${new Date().toLocaleString()}`, 30, doc.page.height - 50);
+    // Professional footer with proper margins
+    doc.fontSize(9).font('Helvetica').fillColor('#6b7280');
+    const footerY = doc.page.height - 80; // Increased footer margin
+    doc.text(`Report Generated: ${formatDateTimeUK(new Date())} | ${shopName} | UK Store Management System v2.0`, 50, footerY);
+    doc.text('This report contains confidential business information', 50, footerY + 15);
+    
+    // Add page numbers
+    const pageCount = doc.bufferedPageRange().count;
+    for (let i = 0; i < pageCount; i++) {
+      doc.switchToPage(i);
+      doc.fontSize(9).fillColor('#9ca3af');
+      doc.text(`Page ${i + 1} of ${pageCount}`, 450, doc.page.height - 60, { align: 'right' });
+    }
 
     doc.end();
+
+    // Log successful export after stream closes
+    writeStream.on('finish', () => {
+      console.log(`✅ PDF exported successfully: ${filePath}`);
+    });
+
+    writeStream.on('error', (error) => {
+      console.error(`❌ Error saving PDF to filesystem: ${error.message}`);
+    });
+
   } catch (error) {
-    console.error('Error exporting PDF:', error);
-    return res.status(500).json({ success: false, message: 'Error exporting PDF', error: error.message });
+    console.error('❌ PDF Export Error:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Failed to export PDF file', 
+      error: error.message,
+      timestamp: formatDateTimeUK(new Date())
+    });
   }
 }
 

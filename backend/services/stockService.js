@@ -11,6 +11,7 @@ class StockService {
   static async moveGodownToStore(productId, quantity, userId, reason = 'Stock replenishment', notes = '') {
     const session = await Product.startSession();
     session.startTransaction();
+    let transactionCommitted = false;
 
     try {
       const product = await Product.findById(productId).session(session);
@@ -108,10 +109,14 @@ class StockService {
       }).save({ session });
 
       await session.commitTransaction();
-      return { success: true, product, stockMovement };
+      transactionCommitted = true;
+      
+      return { success: true, product, movements };
 
     } catch (error) {
-      await session.abortTransaction();
+      if (!transactionCommitted) {
+        await session.abortTransaction();
+      }
       throw error;
     } finally {
       session.endSession();
@@ -124,6 +129,7 @@ class StockService {
   static async moveStoreToGodown(productId, quantity, userId, reason = 'Stock return', notes = '') {
     const session = await Product.startSession();
     session.startTransaction();
+    let transactionCommitted = false;
 
     try {
       const product = await Product.findById(productId).session(session);
@@ -220,10 +226,14 @@ class StockService {
       }).save({ session });
 
       await session.commitTransaction();
-      return { success: true, product, stockMovement };
+      transactionCommitted = true;
+      
+      return { success: true, product, movements: movementsRev };
 
     } catch (error) {
-      await session.abortTransaction();
+      if (!transactionCommitted) {
+        await session.abortTransaction();
+      }
       throw error;
     } finally {
       session.endSession();
@@ -236,6 +246,7 @@ class StockService {
   static async addGodownStock(productId, quantity, userId, reason = 'New delivery', batchNumber = '', referenceNumber = '') {
     const session = await Product.startSession();
     session.startTransaction();
+    let transactionCommitted = false;
 
     try {
       const product = await Product.findById(productId).session(session);
@@ -313,10 +324,14 @@ class StockService {
       }).save({ session });
 
       await session.commitTransaction();
-      return { success: true, product, stockMovement };
+      transactionCommitted = true;
+      
+      return { success: true, product, stockMovement, batch };
 
     } catch (error) {
-      await session.abortTransaction();
+      if (!transactionCommitted) {
+        await session.abortTransaction();
+      }
       throw error;
     } finally {
       session.endSession();
@@ -329,6 +344,7 @@ class StockService {
   static async processSale(productId, quantity, userId, orderNumber = '') {
     const session = await Product.startSession();
     session.startTransaction();
+    let transactionCommitted = false;
 
     try {
       const product = await Product.findById(productId).session(session);
@@ -413,10 +429,20 @@ class StockService {
       }).save({ session });
 
       await session.commitTransaction();
-      return { success: true, product, stockMovement };
+      transactionCommitted = true;
+      
+      return { 
+        success: true, 
+        product, 
+        movements,
+        totalQuantitySold: quantity,
+        orderNumber 
+      };
 
     } catch (error) {
-      await session.abortTransaction();
+      if (!transactionCommitted) {
+        await session.abortTransaction();
+      }
       throw error;
     } finally {
       session.endSession();

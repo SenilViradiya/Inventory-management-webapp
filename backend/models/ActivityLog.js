@@ -31,6 +31,7 @@ const activityLogSchema = new mongoose.Schema({
       'BATCH_UPDATE',
   'PROMOTION_CREATED',
   'PROMOTION_UPDATED',
+  'STOCK_MIGRATION_TO_BATCH',
   // Additional actions used by category/stock endpoints
   'VIEW_STOCK_SUMMARY',
   'EXPORT_STOCK_SUMMARY',

@@ -1233,4 +1233,572 @@ router.get('/recent-activities', authenticateToken, async (req, res) => {
   }
 });
 
+// ============================================================================
+// STOCK SUMMARY PAGE APIs
+// ============================================================================
+
+// @desc    Get comprehensive stock overview for stock summary page
+// @route   GET /api/stock/overview
+// @access  Private
+router.get('/overview', authenticateToken, async (req, res) => {
+  try {
+    const { category, location, search, minStock, maxStock } = req.query;
+
+    // Build filter
+    let filter = {};
+    if (category && category !== 'all') {
+      filter.categoryName = category;
+    }
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { qrCode: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Get all products with stock information
+    const products = await Product.find(filter)
+      .select('name qrCode categoryName stock price imageUrl lowStockThreshold')
+      .sort({ name: 1 });
+
+    // Filter by stock levels if specified
+    let filteredProducts = products;
+    if (minStock !== undefined || maxStock !== undefined) {
+      filteredProducts = products.filter(product => {
+        const total = product.stock?.total || 0;
+        if (minStock !== undefined && total < parseInt(minStock)) return false;
+        if (maxStock !== undefined && total > parseInt(maxStock)) return false;
+        return true;
+      });
+    }
+
+    // Calculate summary statistics
+    const totalProducts = filteredProducts.length;
+    const totalStockValue = filteredProducts.reduce((sum, product) => {
+      return sum + ((product.stock?.total || 0) * (product.price || 0));
+    }, 0);
+    const totalQuantity = filteredProducts.reduce((sum, product) => {
+      return sum + (product.stock?.total || 0);
+    }, 0);
+    const lowStockCount = filteredProducts.filter(product => {
+      const total = product.stock?.total || 0;
+      return total <= (product.lowStockThreshold || 0) && total > 0;
+    }).length;
+    const outOfStockCount = filteredProducts.filter(product => {
+      return (product.stock?.total || 0) === 0;
+    }).length;
+
+    // Group by location
+    const locationBreakdown = filteredProducts.reduce((acc, product) => {
+      const godown = product.stock?.godown || 0;
+      const store = product.stock?.store || 0;
+      
+      acc.godown.quantity += godown;
+      acc.godown.value += godown * (product.price || 0);
+      acc.store.quantity += store;
+      acc.store.value += store * (product.price || 0);
+      
+      return acc;
+    }, {
+      godown: { quantity: 0, value: 0 },
+      store: { quantity: 0, value: 0 }
+    });
+
+    // Group by category
+    const categoryBreakdown = filteredProducts.reduce((acc, product) => {
+      const category = product.categoryName || 'Uncategorized';
+      if (!acc[category]) {
+        acc[category] = { 
+          quantity: 0, 
+          value: 0, 
+          products: 0,
+          lowStock: 0,
+          outOfStock: 0 
+        };
+      }
+      
+      const quantity = product.stock?.total || 0;
+      const value = quantity * (product.price || 0);
+      
+      acc[category].quantity += quantity;
+      acc[category].value += value;
+      acc[category].products += 1;
+      
+      if (quantity === 0) {
+        acc[category].outOfStock += 1;
+      } else if (quantity <= (product.lowStockThreshold || 0)) {
+        acc[category].lowStock += 1;
+      }
+      
+      return acc;
+    }, {});
+
+    res.json({
+      success: true,
+      data: {
+        overview: {
+          totalProducts,
+          totalQuantity,
+          totalStockValue,
+          lowStockCount,
+          outOfStockCount,
+          averageStockValue: totalProducts > 0 ? totalStockValue / totalProducts : 0
+        },
+        locationBreakdown,
+        categoryBreakdown,
+        products: filteredProducts,
+        filters: {
+          category: category || 'all',
+          location,
+          search,
+          minStock,
+          maxStock
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get stock overview error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// @desc    Get stock summary with pagination and advanced filtering
+// @route   GET /api/stock/summary-detailed
+// @access  Private
+router.get('/summary-detailed', authenticateToken, async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      category,
+      stockStatus, // 'low', 'out', 'normal', 'all'
+      location, // 'godown', 'store', 'both'
+      sortBy = 'name',
+      sortOrder = 'asc',
+      search
+    } = req.query;
+
+    // Build filter
+    let filter = {};
+    if (category && category !== 'all') {
+      filter.categoryName = category;
+    }
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { qrCode: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Get products
+    let products = await Product.find(filter)
+      .select('name qrCode categoryName stock price imageUrl lowStockThreshold createdAt')
+      .sort({ [sortBy]: sortOrder === 'desc' ? -1 : 1 });
+
+    // Filter by stock status
+    if (stockStatus && stockStatus !== 'all') {
+      products = products.filter(product => {
+        const total = product.stock?.total || 0;
+        const threshold = product.lowStockThreshold || 0;
+        
+        switch (stockStatus) {
+          case 'out':
+            return total === 0;
+          case 'low':
+            return total > 0 && total <= threshold;
+          case 'normal':
+            return total > threshold;
+          default:
+            return true;
+        }
+      });
+    }
+
+    // Filter by location
+    if (location && location !== 'both') {
+      products = products.filter(product => {
+        if (location === 'godown') {
+          return (product.stock?.godown || 0) > 0;
+        } else if (location === 'store') {
+          return (product.stock?.store || 0) > 0;
+        }
+        return true;
+      });
+    }
+
+    // Pagination
+    const startIndex = (page - 1) * limit;
+    const endIndex = page * limit;
+    const paginatedProducts = products.slice(startIndex, endIndex);
+
+    // Add stock status to each product
+    const productsWithStatus = paginatedProducts.map(product => {
+      const total = product.stock?.total || 0;
+      const threshold = product.lowStockThreshold || 0;
+      
+      let stockStatus = 'normal';
+      if (total === 0) stockStatus = 'out';
+      else if (total <= threshold) stockStatus = 'low';
+      
+      return {
+        ...product.toObject(),
+        stockStatus,
+        stockValue: total * (product.price || 0)
+      };
+    });
+
+    res.json({
+      success: true,
+      data: {
+        products: productsWithStatus,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(products.length / limit),
+          totalProducts: products.length,
+          hasNextPage: endIndex < products.length,
+          hasPrevPage: page > 1,
+          limit: parseInt(limit)
+        },
+        filters: {
+          category: category || 'all',
+          stockStatus: stockStatus || 'all',
+          location: location || 'both',
+          sortBy,
+          sortOrder,
+          search
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get detailed stock summary error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// @desc    Get stock alerts (low stock, out of stock, expiring batches)
+// @route   GET /api/stock/alerts
+// @access  Private
+router.get('/alerts', authenticateToken, async (req, res) => {
+  try {
+    const { priority = 'all' } = req.query;
+
+    // Get low stock products
+    const lowStockProducts = await Product.find({
+      $expr: {
+        $and: [
+          { $gt: ['$stock.total', 0] },
+          { $lte: ['$stock.total', '$lowStockThreshold'] }
+        ]
+      }
+    }).select('name stock lowStockThreshold price imageUrl categoryName');
+
+    // Get out of stock products
+    const outOfStockProducts = await Product.find({
+      'stock.total': 0
+    }).select('name stock price imageUrl categoryName');
+
+    // Get expiring batches (if using batch system)
+    const ProductBatch = require('../models/ProductBatch');
+    const expiringBatches = await ProductBatch.find({
+      expiryDate: {
+        $gte: new Date(),
+        $lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // Next 7 days
+      }
+    }).populate('productId', 'name categoryName').sort({ expiryDate: 1 });
+
+    // Calculate alert priorities
+    const alerts = [];
+
+    // Critical: Out of stock
+    outOfStockProducts.forEach(product => {
+      alerts.push({
+        id: product._id,
+        type: 'out_of_stock',
+        priority: 'critical',
+        title: 'Out of Stock',
+        message: `${product.name} is out of stock`,
+        product: product,
+        timestamp: new Date()
+      });
+    });
+
+    // High: Low stock
+    lowStockProducts.forEach(product => {
+      alerts.push({
+        id: product._id,
+        type: 'low_stock',
+        priority: 'high',
+        title: 'Low Stock Alert',
+        message: `${product.name} has only ${product.stock.total} units left (threshold: ${product.lowStockThreshold})`,
+        product: product,
+        timestamp: new Date()
+      });
+    });
+
+    // Medium: Expiring batches
+    expiringBatches.forEach(batch => {
+      const daysToExpiry = Math.ceil((batch.expiryDate - new Date()) / (24 * 60 * 60 * 1000));
+      alerts.push({
+        id: batch._id,
+        type: 'expiring_batch',
+        priority: 'medium',
+        title: 'Batch Expiring Soon',
+        message: `Batch ${batch.batchNumber} for ${batch.productId?.name} expires in ${daysToExpiry} days`,
+        batch: batch,
+        daysToExpiry,
+        timestamp: new Date()
+      });
+    });
+
+    // Filter by priority if specified
+    let filteredAlerts = alerts;
+    if (priority !== 'all') {
+      filteredAlerts = alerts.filter(alert => alert.priority === priority);
+    }
+
+    // Sort by priority and timestamp
+    const priorityOrder = { critical: 3, high: 2, medium: 1, low: 0 };
+    filteredAlerts.sort((a, b) => {
+      if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
+        return priorityOrder[b.priority] - priorityOrder[a.priority];
+      }
+      return new Date(b.timestamp) - new Date(a.timestamp);
+    });
+
+    // Summary counts
+    const summary = {
+      total: alerts.length,
+      critical: alerts.filter(a => a.priority === 'critical').length,
+      high: alerts.filter(a => a.priority === 'high').length,
+      medium: alerts.filter(a => a.priority === 'medium').length,
+      byType: {
+        outOfStock: outOfStockProducts.length,
+        lowStock: lowStockProducts.length,
+        expiringBatches: expiringBatches.length
+      }
+    };
+
+    res.json({
+      success: true,
+      data: {
+        alerts: filteredAlerts,
+        summary,
+        filter: priority
+      }
+    });
+
+  } catch (error) {
+    console.error('Get stock alerts error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// @desc    Get stock movements history
+// @route   GET /api/stock/movements
+// @access  Private
+router.get('/movements', authenticateToken, async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      productId,
+      movementType, // 'in', 'out', 'transfer'
+      dateFrom,
+      dateTo,
+      userId
+    } = req.query;
+
+    // Build filter
+    let filter = {};
+    if (productId) filter.productId = productId;
+    if (userId) filter.userId = userId;
+    if (movementType) {
+      switch (movementType) {
+        case 'in':
+          filter.action = { $in: ['INCREASE_STOCK', 'STOCK_RECEIVED'] };
+          break;
+        case 'out':
+          filter.action = { $in: ['REDUCE_STOCK', 'BULK_REDUCTION'] };
+          break;
+        case 'transfer':
+          filter.action = 'STOCK_MOVEMENT';
+          break;
+      }
+    }
+
+    // Date range filter
+    if (dateFrom || dateTo) {
+      filter.createdAt = {};
+      if (dateFrom) filter.createdAt.$gte = new Date(dateFrom);
+      if (dateTo) filter.createdAt.$lte = new Date(dateTo);
+    }
+
+    // Get movements with pagination
+    const skip = (page - 1) * limit;
+    const movements = await ActivityLog.find(filter)
+      .populate('productId', 'name qrCode categoryName imageUrl')
+      .populate('userId', 'username fullName')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const totalMovements = await ActivityLog.countDocuments(filter);
+
+    // Calculate summary
+    const summary = await ActivityLog.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: null,
+          totalMovements: { $sum: 1 },
+          totalStockIn: {
+            $sum: {
+              $cond: [
+                { $in: ['$action', ['INCREASE_STOCK', 'STOCK_RECEIVED']] },
+                { $abs: '$change' },
+                0
+              ]
+            }
+          },
+          totalStockOut: {
+            $sum: {
+              $cond: [
+                { $in: ['$action', ['REDUCE_STOCK', 'BULK_REDUCTION']] },
+                { $abs: '$change' },
+                0
+              ]
+            }
+          }
+        }
+      }
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        movements,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(totalMovements / limit),
+          totalMovements,
+          hasNextPage: skip + movements.length < totalMovements,
+          hasPrevPage: page > 1,
+          limit: parseInt(limit)
+        },
+        summary: summary[0] || {
+          totalMovements: 0,
+          totalStockIn: 0,
+          totalStockOut: 0
+        },
+        filters: {
+          productId,
+          movementType,
+          dateFrom,
+          dateTo,
+          userId
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get stock movements error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// @desc    Export stock summary as CSV
+// @route   GET /api/stock/export
+// @access  Private
+router.get('/export', authenticateToken, async (req, res) => {
+  try {
+    const { format = 'csv', category, stockStatus } = req.query;
+
+    // Build filter
+    let filter = {};
+    if (category && category !== 'all') {
+      filter.categoryName = category;
+    }
+
+    // Get products
+    let products = await Product.find(filter)
+      .select('name qrCode categoryName stock price lowStockThreshold createdAt');
+
+    // Filter by stock status
+    if (stockStatus && stockStatus !== 'all') {
+      products = products.filter(product => {
+        const total = product.stock?.total || 0;
+        const threshold = product.lowStockThreshold || 0;
+        
+        switch (stockStatus) {
+          case 'out':
+            return total === 0;
+          case 'low':
+            return total > 0 && total <= threshold;
+          case 'normal':
+            return total > threshold;
+          default:
+            return true;
+        }
+      });
+    }
+
+    if (format === 'csv') {
+      const { Parser } = require('json2csv');
+      
+      const csvData = products.map(product => ({
+        'Product Name': product.name,
+        'QR Code': product.qrCode,
+        'Category': product.categoryName || 'Uncategorized',
+        'Total Stock': product.stock?.total || 0,
+        'Godown Stock': product.stock?.godown || 0,
+        'Store Stock': product.stock?.store || 0,
+        'Price': product.price || 0,
+        'Stock Value': (product.stock?.total || 0) * (product.price || 0),
+        'Low Stock Threshold': product.lowStockThreshold || 0,
+        'Stock Status': (() => {
+          const total = product.stock?.total || 0;
+          const threshold = product.lowStockThreshold || 0;
+          if (total === 0) return 'Out of Stock';
+          if (total <= threshold) return 'Low Stock';
+          return 'Normal';
+        })(),
+        'Created Date': product.createdAt?.toISOString().split('T')[0] || ''
+      }));
+
+      const parser = new Parser();
+      const csv = parser.parse(csvData);
+
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename=stock-summary-${new Date().toISOString().split('T')[0]}.csv`);
+      res.send(csv);
+    } else {
+      res.json({
+        success: true,
+        data: products
+      });
+    }
+
+  } catch (error) {
+    console.error('Export stock summary error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
 module.exports = router;

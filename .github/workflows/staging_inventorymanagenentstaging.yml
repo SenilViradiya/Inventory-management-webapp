@@ -24,6 +24,7 @@ jobs:
           node-version: '22.x'
 
       - name: npm install, build, and test
+        working-directory: ./backend
         run: |
           npm install
           npm run build --if-present
@@ -62,4 +63,5 @@ jobs:
           app-name: 'inventoryManagenentStaging'
           slot-name: 'Production'
           package: .
+
           
